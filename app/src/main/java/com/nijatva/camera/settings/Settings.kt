@@ -1,6 +1,7 @@
 package com.nijatva.camera.settings
 
 import android.content.Context
+import org.json.JSONObject
 
 enum class FlashMode(val label: String) {
     OFF("Off"), AUTO("Auto"), ON("On")
@@ -99,6 +100,60 @@ class SettingsStore(context: Context) {
             .putBoolean("vibrationOnShutter", settings.vibrationOnShutter)
             .apply()
     }
+
+    /** Serialises settings to JSON, for a backup or for moving a setup to another phone. */
+    fun exportJson(s: Settings): String = JSONObject().apply {
+        put("flash", s.flash.name)
+        put("hdr", s.hdr.name)
+        put("timer", s.timer.name)
+        put("ratio", s.ratio.name)
+        put("grid", s.grid.name)
+        put("framingHints", s.framingHints)
+        put("quickAccessControls", s.quickAccessControls)
+        put("saveSelfieAsPreviewed", s.saveSelfieAsPreviewed)
+        put("rawPlusJpeg", s.rawPlusJpeg)
+        put("timerLight", s.timerLight)
+        put("wideColour", s.wideColour)
+        put("ois", s.ois)
+        put("rawBitDepth", s.rawBitDepth)
+        put("jpegQuality", s.jpegQuality)
+        put("vibrationOnShutter", s.vibrationOnShutter)
+    }.toString(2)
+
+    /**
+     * Parses JSON made by exportJson. Missing or invalid fields fall back to
+     * defaults, and out-of-range numbers are clamped. Returns null only when the
+     * text is not JSON at all.
+     */
+    fun importJson(text: String): Settings? {
+        val o = runCatching { JSONObject(text) }.getOrNull() ?: return null
+        val d = Settings()
+        return Settings(
+            flash = enumFrom(o, "flash", d.flash),
+            hdr = enumFrom(o, "hdr", d.hdr),
+            timer = enumFrom(o, "timer", d.timer),
+            ratio = enumFrom(o, "ratio", d.ratio),
+            grid = enumFrom(o, "grid", d.grid),
+            framingHints = o.optBoolean("framingHints", d.framingHints),
+            quickAccessControls = o.optBoolean("quickAccessControls", d.quickAccessControls),
+            saveSelfieAsPreviewed = o.optBoolean("saveSelfieAsPreviewed", d.saveSelfieAsPreviewed),
+            rawPlusJpeg = o.optBoolean("rawPlusJpeg", d.rawPlusJpeg),
+            timerLight = o.optBoolean("timerLight", d.timerLight),
+            wideColour = o.optBoolean("wideColour", d.wideColour),
+            ois = o.optBoolean("ois", d.ois),
+            rawBitDepth = if (o.optInt("rawBitDepth", d.rawBitDepth) == 10) 10 else 16,
+            jpegQuality = o.optInt("jpegQuality", d.jpegQuality).coerceIn(85, 100),
+            vibrationOnShutter = o.optBoolean("vibrationOnShutter", d.vibrationOnShutter),
+        )
+    }
+
+    /** Puts every setting back to its default. */
+    fun reset() {
+        prefs.edit().clear().apply()
+    }
+
+    private inline fun <reified T : Enum<T>> enumFrom(o: JSONObject, key: String, fallback: T): T =
+        runCatching { enumValueOf<T>(o.getString(key)) }.getOrDefault(fallback)
 
     private inline fun <reified T : Enum<T>> readEnum(key: String, fallback: T): T {
         val stored = prefs.getString(key, null) ?: return fallback

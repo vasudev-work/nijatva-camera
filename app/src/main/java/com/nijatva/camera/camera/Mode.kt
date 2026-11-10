@@ -11,6 +11,7 @@ enum class Mode(val label: String) {
     PRO("Pro"),
     PANORAMA("Sphere"),
     RAW("RAW"),
+    VIDEO("Video"),
     ;
 
     /** Modes that need the YUV reader and on-device fusion. */

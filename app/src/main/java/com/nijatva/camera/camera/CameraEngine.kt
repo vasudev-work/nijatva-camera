@@ -79,6 +79,18 @@ class CameraEngine(
     private var caps: DeviceCapabilities? = null
     private var cameraId: String = ""
 
+    /** Display rotation in degrees (0, 90, 180, 270), set by the activity. */
+    @Volatile private var deviceRotation = 0
+
+    private val VIDEO_FPS = 30
+    private var videoRecorder: com.nijatva.camera.video.VideoRecorder? = null
+    private var videoFile: java.io.File? = null
+    private var recordStartedAt = 0L
+
+    /** True while a take is being encoded. Read by the activity for the REC indicator. */
+    @Volatile var recording: Boolean = false
+        private set
+
     var mode: Mode = Mode.PHOTO
         private set
 
@@ -157,6 +169,10 @@ class CameraEngine(
     fun setMode(newMode: Mode) {
         if (busy) {
             callback.onNotice("Finish the current capture first")
+            return
+        }
+        if (recording) {
+            callback.onNotice("Stop recording first")
             return
         }
         if (newMode == mode) return
@@ -282,6 +298,7 @@ class CameraEngine(
             Mode.RAW -> captureRaw()
             Mode.NIGHT, Mode.HDR -> startComputational()
             Mode.PANORAMA -> callback.onNotice("Panorama frames are captured automatically as you turn")
+            Mode.VIDEO -> if (recording) stopVideo() else startVideo()
         }
     }
 
@@ -427,15 +444,20 @@ class CameraEngine(
 
         processor.execute {
             try {
-                val bitmap = if (capturedMode == Mode.NIGHT) stackNight(captured) else fuseHdr(captured)
+                val raw = if (capturedMode == Mode.NIGHT) stackNight(captured) else fuseHdr(captured)
+                // Stacking works on sensor-native frames, so turn the merged result
+                // upright here. Its pixels then look right in every gallery app.
+                val upright = Orientation.rotate(raw, jpegRotation())
+                if (upright !== raw) raw.recycle()
                 val uri = saver.saveJpeg(
-                    bitmap,
+                    upright,
                     quality = jpegQuality,
                     label = capturedMode.label.uppercase(),
                     mirror = shouldMirror(),
                     wideGamut = wideColour,
                 )
-                bitmap.recycle()
+                saver.tagMerged(uri)
+                upright.recycle()
                 busy = false
                 handler.post { callback.onSaved(uri, "${capturedMode.label}: ${captured.size} frames merged") }
             } catch (t: Throwable) {
@@ -542,6 +564,22 @@ class CameraEngine(
                 }
             }
 
+            Mode.VIDEO -> {
+                val size = videoSize()
+                val file = java.io.File(context.cacheDir, "nijatva_${System.currentTimeMillis()}.mp4")
+                videoFile = file
+                try {
+                    val recorder = com.nijatva.camera.video.VideoRecorder(
+                        context, file, size, VIDEO_FPS, jpegRotation(),
+                    )
+                    videoRecorder = recorder
+                    outputs += recorder.surface
+                } catch (t: Throwable) {
+                    callback.onFailure("Video could not be prepared: ${t.message}")
+                    return
+                }
+            }
+
             Mode.NIGHT, Mode.HDR, Mode.PANORAMA -> {
                 val limit = when (mode) {
                     Mode.NIGHT -> NIGHT_MAX_PIXELS
@@ -594,6 +632,94 @@ class CameraEngine(
         }
     }
 
+    /**
+     * Starts a take. The recorder was prepared when the session was built, so this
+     * only has to turn it on and add its surface to the repeating request.
+     */
+    fun startVideo(): Boolean {
+        if (recording) return true
+        val rec = videoRecorder
+        if (rec == null) {
+            callback.onNotice("Video is still getting ready")
+            return false
+        }
+        return try {
+            rec.start()
+            recordStartedAt = System.currentTimeMillis()
+            recording = true
+            restartPreview()
+            true
+        } catch (t: Throwable) {
+            Log.e(TAG, "Recorder start failed", t)
+            callback.onFailure("Could not start recording: ${t.message}")
+            false
+        }
+    }
+
+    /**
+     * Ends the take. The session is closed first so nothing feeds the recorder while
+     * it is finalised. The file is then moved into the gallery and a fresh session is
+     * built for the next take.
+     */
+    fun stopVideo() {
+        if (!recording) return
+        recording = false
+        val rec = videoRecorder
+        videoRecorder = null
+        val file = videoFile
+        videoFile = null
+
+        handler.post {
+            closeSession()
+            processor.execute {
+                var ok = true
+                try {
+                    rec?.stop()
+                } catch (t: Throwable) {
+                    Log.e(TAG, "Recorder stop failed", t)
+                    ok = false
+                }
+                try {
+                    rec?.release()
+                } catch (_: Throwable) {
+                    // Already released; nothing to do.
+                }
+
+                if (ok && file != null && file.length() > 0) {
+                    try {
+                        val uri = saver.saveVideo(file)
+                        handler.post { callback.onSaved(uri, "Video saved") }
+                    } catch (t: Throwable) {
+                        handler.post { callback.onFailure("Could not save the video: ${t.message}") }
+                    }
+                } else {
+                    file?.delete()
+                    handler.post { callback.onFailure("Recording was too short to save") }
+                }
+
+                handler.post { createSession() }
+            }
+        }
+    }
+
+    fun recordingElapsedMs(): Long =
+        if (recording) System.currentTimeMillis() - recordStartedAt else 0L
+
+    /**
+     * Largest 16:9 size the MediaRecorder can encode, capped at 1080p. Falls back to
+     * 720p when the camera reports nothing usable.
+     */
+    private fun videoSize(): android.util.Size {
+        val map = manager.getCameraCharacteristics(cameraId)
+            .get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
+        val all = map?.getOutputSizes(android.media.MediaRecorder::class.java)?.toList().orEmpty()
+        val within = all.filter { it.width <= 1920 && it.height <= 1080 }
+        val sixteenNine = within.filter { kotlin.math.abs(it.width * 9.0 / it.height - 16.0) < 0.05 }
+        return (sixteenNine.ifEmpty { within })
+            .maxByOrNull { it.width.toLong() * it.height }
+            ?: android.util.Size(1280, 720)
+    }
+
     private fun restartPreview() {
         val s = session ?: return
         try {
@@ -607,6 +733,18 @@ class CameraEngine(
         }
     }
 
+    fun setDeviceRotation(degrees: Int) {
+        deviceRotation = degrees
+    }
+
+    /** How far the JPEG must be turned so it is upright on this screen. */
+    private fun jpegRotation(): Int {
+        val ch = manager.getCameraCharacteristics(cameraId)
+        val sensor = ch.get(CameraCharacteristics.SENSOR_ORIENTATION) ?: 0
+        val front = ch.get(CameraCharacteristics.LENS_FACING) == CameraCharacteristics.LENS_FACING_FRONT
+        return Orientation.jpegRotation(sensor, deviceRotation, front)
+    }
+
     private fun buildRequest(
         template: Int,
         target: Surface?,
@@ -615,8 +753,10 @@ class CameraEngine(
     ): CaptureRequest {
         val dev = device ?: error("Camera is not open")
         val builder = dev.createCaptureRequest(template)
+        builder.set(CaptureRequest.JPEG_ORIENTATION, jpegRotation())
 
         previewSurface?.let { builder.addTarget(it) }
+        if (recording) videoRecorder?.surface?.let { builder.addTarget(it) }
         target?.let { builder.addTarget(it) }
         if (template != CameraDevice.TEMPLATE_STILL_CAPTURE) {
             yuvReader?.surface?.let { builder.addTarget(it) }
@@ -797,6 +937,8 @@ class CameraEngine(
     }
 
     private fun closeReaders() {
+        videoRecorder?.release()
+        videoRecorder = null
         jpegReader?.close()
         yuvReader?.close()
         rawReader?.close()

@@ -29,9 +29,9 @@ the app.
 
 ## What it deliberately does not do
 
-- No video recording. Video is a separate pipeline (`MediaRecorder` or
-  `MediaCodec` plus a surface) and mixing it into this class would make both
-  worse. It is the next module, not a flag.
+- No audio in video yet. Video mode records picture only (`MediaRecorder` with a
+  surface source, H.264 MP4). Microphone audio needs `RECORD_AUDIO` and is a
+  separate step.
 - No beauty, no AI scene detection, no portrait bokeh. Those are vendor
   algorithms shipped inside the OEM camera; nothing here can reproduce them.
 - No optical quality improvement. Noise, tone and colour improve through

@@ -109,6 +109,34 @@ class ImageSaver(private val context: Context) {
         return uri
     }
 
+    /** Moves a finished recording from the cache into the gallery, then deletes the cache copy. */
+    fun saveVideo(file: File): Uri {
+        val name = "VID_${timestamp()}.mp4"
+        val values = ContentValues().apply {
+            put(MediaStore.Video.Media.DISPLAY_NAME, name)
+            put(MediaStore.Video.Media.MIME_TYPE, "video/mp4")
+            put(MediaStore.Video.Media.RELATIVE_PATH, "${Environment.DIRECTORY_DCIM}/NijatvaCamera")
+            put(MediaStore.Video.Media.IS_PENDING, 1)
+            put(MediaStore.Video.Media.DATE_TAKEN, System.currentTimeMillis())
+            put(MediaStore.Video.Media.DATE_ADDED, System.currentTimeMillis() / 1000)
+        }
+
+        val resolver = context.contentResolver
+        val uri = resolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, values)
+            ?: error("MediaStore refused the video insert")
+
+        resolver.openOutputStream(uri)?.use { stream ->
+            file.inputStream().use { it.copyTo(stream) }
+        } ?: error("Could not open $uri for writing")
+
+        file.delete()
+
+        values.clear()
+        values.put(MediaStore.Video.Media.IS_PENDING, 0)
+        resolver.update(uri, values, null, null)
+        return uri
+    }
+
     /** Writes capture metadata into a JPEG already committed to MediaStore. */
     fun writeExif(uri: Uri, iso: Int?, exposureNs: Long?, focalLength: Float?) {
         try {
@@ -123,6 +151,25 @@ class ImageSaver(private val context: Context) {
             }
         } catch (_: Exception) {
             // Metadata is nice to have; a failed EXIF write must not lose the photo.
+        }
+    }
+
+    /**
+     * Adds the metadata a merged image lacks: who made it, and that its pixels
+     * are already upright, so no gallery needs to rotate it.
+     */
+    fun tagMerged(uri: Uri) {
+        try {
+            context.contentResolver.openFileDescriptor(uri, "rw")?.use { descriptor ->
+                val exif = ExifInterface(descriptor.fileDescriptor)
+                exif.setAttribute(ExifInterface.TAG_MAKE, android.os.Build.MANUFACTURER)
+                exif.setAttribute(ExifInterface.TAG_MODEL, android.os.Build.MODEL)
+                exif.setAttribute(ExifInterface.TAG_SOFTWARE, "Nijatva")
+                exif.setAttribute(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL.toString())
+                exif.saveAttributes()
+            }
+        } catch (_: Exception) {
+            // Metadata is nice to have; a failed tag must not lose the photo.
         }
     }
 

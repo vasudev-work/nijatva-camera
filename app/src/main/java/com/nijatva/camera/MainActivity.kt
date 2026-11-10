@@ -94,6 +94,13 @@ class MainActivity : AppCompatActivity(), CameraEngine.Callback {
 
     private val panoTicker = Handler(Looper.getMainLooper())
     private val uiTicker = Handler(Looper.getMainLooper())
+
+    private var thumbView: android.widget.ImageView? = null
+    private var lastSavedUri: Uri? = null
+    private val stillness = com.nijatva.camera.camera.StillnessTracker()
+    private var ringColor = 0
+    private var wasRecording = false
+    private lateinit var shutterRing: GradientDrawable
     private var panoActive = false
     private var panoFrames = 0
     private var startYaw = 0f
@@ -108,6 +115,7 @@ class MainActivity : AppCompatActivity(), CameraEngine.Callback {
         buildUi()
 
         engine = CameraEngine(this, this)
+        engine.setDeviceRotation(currentRotationDegrees())
         gyro = GyroTracker(this)
         selectMode(Mode.PHOTO)
         applySettings()
@@ -127,6 +135,25 @@ class MainActivity : AppCompatActivity(), CameraEngine.Callback {
         }
 
         showPreviousCrash()
+    }
+
+    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+        super.onConfigurationChanged(newConfig)
+        engine.setDeviceRotation(currentRotationDegrees())
+    }
+
+    /** Display rotation in degrees, which is what Camera2 expects for JPEG orientation. */
+    private fun currentRotationDegrees(): Int = when (windowManager.defaultDisplay.rotation) {
+        android.view.Surface.ROTATION_90 -> 90
+        android.view.Surface.ROTATION_180 -> 180
+        android.view.Surface.ROTATION_270 -> 270
+        else -> 0
+    }
+
+    override fun onPause() {
+        super.onPause()
+        // Leaving the app ends the take cleanly instead of losing the file.
+        if (engine.recording) engine.stopVideo()
     }
 
     override fun onDestroy() {
@@ -391,23 +418,56 @@ class MainActivity : AppCompatActivity(), CameraEngine.Callback {
         }
     }
 
-    private fun thumbnail(): View = View(this).apply {
+    /** Last-shot thumbnail. Shows the real photo after each save; tap opens it in the gallery. */
+    private fun thumbnail(): View = android.widget.ImageView(this).apply {
+        thumbView = this
         background = GradientDrawable().apply {
             cornerRadius = dp(8).toFloat()
             setColor(Color.parseColor("#2A2E33"))
             setStroke(dp(1), Color.argb(90, 255, 255, 255))
         }
-        setOnClickListener {
-            Toast.makeText(context, "Photos are saved to Pictures/NijatvaCamera", Toast.LENGTH_SHORT).show()
+        clipToOutline = true
+        outlineProvider = android.view.ViewOutlineProvider.BACKGROUND
+        scaleType = android.widget.ImageView.ScaleType.CENTER_CROP
+        setOnClickListener { openLastShot() }
+    }
+
+    private fun refreshThumbnail(uri: Uri) {
+        Thread {
+            // Fails for some formats (DNG may have no thumbnail); keep the old one then.
+            val bitmap = try {
+                contentResolver.loadThumbnail(uri, android.util.Size(192, 192), null)
+            } catch (_: Exception) {
+                null
+            }
+            runOnUiThread { bitmap?.let { thumbView?.setImageBitmap(it) } }
+        }.start()
+    }
+
+    private fun openLastShot() {
+        val uri = lastSavedUri
+        if (uri == null) {
+            Toast.makeText(this, "No photo yet. Saved photos go to Pictures/NijatvaCamera", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val type = contentResolver.getType(uri) ?: "image/*"
+        try {
+            startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, type)
+                addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            })
+        } catch (_: Exception) {
+            Toast.makeText(this, "No app can open this file", Toast.LENGTH_SHORT).show()
         }
     }
 
     private fun shutterButton(): View = View(this).apply {
-        background = GradientDrawable().apply {
+        shutterRing = GradientDrawable().apply {
             shape = GradientDrawable.OVAL
             setColor(Color.WHITE)
             setStroke(dp(5), Color.argb(150, 255, 255, 255))
         }
+        background = shutterRing
         setOnClickListener {
             if (settings.vibrationOnShutter) {
                 window.decorView.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
@@ -604,7 +664,38 @@ class MainActivity : AppCompatActivity(), CameraEngine.Callback {
     private val levelRunnable = object : Runnable {
         override fun run() {
             if (settings.framingHints && !panoActive) gridOverlay.setRoll(gyro.rollDegrees)
+            stillness.push(gyro.yawDegrees, gyro.pitchDegrees, gyro.rollDegrees)
+            updateShutterRing()
+            updateRecordingStatus()
             uiTicker.postDelayed(this, 150)
+        }
+    }
+
+    /**
+     * Shutter ring state: red while recording, green or amber in Night mode for
+     * steady or moving, and the plain ring otherwise. Only restrokes on change.
+     */
+    private fun updateShutterRing() {
+        val color = when {
+            engine.recording -> Color.parseColor("#FF3B30")
+            currentMode == Mode.NIGHT && gyro.isAvailable ->
+                if (stillness.isStill()) Color.parseColor("#34C759") else Color.parseColor("#FFB020")
+            else -> Color.argb(150, 255, 255, 255)
+        }
+        if (color == ringColor) return
+        ringColor = color
+        shutterRing.setStroke(dp(5), color)
+    }
+
+    /** Shows the elapsed time while recording, and clears it once the take stops. */
+    private fun updateRecordingStatus() {
+        if (engine.recording) {
+            val secs = engine.recordingElapsedMs() / 1000
+            statusText.text = "REC %02d:%02d".format(secs / 60, secs % 60)
+            wasRecording = true
+        } else if (wasRecording) {
+            wasRecording = false
+            statusText.text = ""
         }
     }
 
@@ -668,6 +759,8 @@ class MainActivity : AppCompatActivity(), CameraEngine.Callback {
     }
 
     override fun onSaved(uri: Uri, message: String) = runOnUiThread {
+        lastSavedUri = uri
+        refreshThumbnail(uri)
         statusText.text = "$message · DCIM/NijatvaCamera"
         Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
     }
