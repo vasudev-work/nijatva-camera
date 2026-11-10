@@ -44,7 +44,7 @@ class SettingsSheet(
             orientation = LinearLayout.VERTICAL
             background = GradientDrawable().apply {
                 setColor(Color.parseColor("#121417"))
-                cornerRadii = floatArrayOf(dp(24), dp(24), dp(24), dp(24), 0f, 0f, 0f, 0f)
+                cornerRadii = floatArrayOf(dp(24).toFloat(), dp(24).toFloat(), dp(24).toFloat(), dp(24).toFloat(), 0f, 0f, 0f, 0f)
             }
             setPadding(dp(20), dp(10), dp(20), dp(24))
         }
@@ -197,7 +197,7 @@ class SettingsSheet(
     private fun handle(): View = View(context).apply {
         background = GradientDrawable().apply {
             setColor(Color.parseColor("#4A4F55"))
-            cornerRadius = dp(3)
+            cornerRadius = dp(3).toFloat()
         }
         layoutParams = LinearLayout.LayoutParams(dp(38), dp(4)).apply {
             gravity = Gravity.CENTER_HORIZONTAL
@@ -230,7 +230,7 @@ class SettingsSheet(
                 setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
                 setTextColor(if (selected) Color.parseColor("#101820") else Color.WHITE)
                 background = GradientDrawable().apply {
-                    cornerRadius = dp(20)
+                    cornerRadius = dp(20).toFloat()
                     setColor(if (selected) Color.parseColor("#A8C7FA") else Color.parseColor("#26292E"))
                 }
                 setPadding(0, dp(12), 0, dp(12))
@@ -252,7 +252,7 @@ class SettingsSheet(
     private fun stylePill(pill: TextView, selected: Boolean) {
         pill.setTextColor(if (selected) Color.parseColor("#101820") else Color.WHITE)
         pill.background = GradientDrawable().apply {
-            cornerRadius = dp(20)
+            cornerRadius = dp(20).toFloat()
             setColor(if (selected) Color.parseColor("#A8C7FA") else Color.parseColor("#26292E"))
         }
     }
@@ -329,7 +329,7 @@ class SettingsSheet(
                 setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
                 setTextColor(if (isSelected) Color.parseColor("#101820") else Color.WHITE)
                 background = GradientDrawable().apply {
-                    cornerRadius = dp(16)
+                    cornerRadius = dp(16).toFloat()
                     setColor(if (isSelected) Color.parseColor("#A8C7FA") else Color.parseColor("#26292E"))
                 }
                 setPadding(dp(10), dp(9), dp(10), dp(9))
@@ -372,106 +372,13 @@ class SettingsSheet(
         setTextColor(Color.WHITE)
         setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
         background = GradientDrawable().apply {
-            cornerRadius = dp(24)
+            cornerRadius = dp(24).toFloat()
             setColor(Color.TRANSPARENT)
             setStroke(dp(1), Color.parseColor("#6A7178"))
         }
         setPadding(0, dp(13), 0, dp(13))
         setOnClickListener { onClick() }
         layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-    }
-
-    private fun sliderRow(title: String, subtitle: String, value: Int, onChange: (Int) -> Unit): View {
-        val column = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(0, dp(12), 0, dp(12))
-        }
-        val header = LinearLayout(context).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-        }
-        val text = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
-        text.addView(TextView(context).apply {
-            this.text = title
-            setTextColor(Color.WHITE)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
-        })
-        text.addView(TextView(context).apply {
-            this.text = subtitle
-            setTextColor(Color.parseColor("#9AA3AD"))
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
-            setPadding(0, dp(2), dp(12), 0)
-        })
-        header.addView(text, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-
-        val readout = TextView(context).apply {
-            this.text = value.toString()
-            setTextColor(Color.WHITE)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
-        }
-        header.addView(readout)
-        column.addView(header)
-
-        column.addView(android.widget.SeekBar(context).apply {
-            max = 15
-            progress = (value - 85).coerceIn(0, 15)
-            setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
-                override fun onProgressChanged(bar: android.widget.SeekBar, progress: Int, fromUser: Boolean) {
-                    val quality = 85 + progress
-                    readout.text = quality.toString()
-                    if (fromUser) onChange(quality)
-                }
-
-                override fun onStartTrackingTouch(bar: android.widget.SeekBar) = Unit
-                override fun onStopTrackingTouch(bar: android.widget.SeekBar) = Unit
-            })
-        })
-        return column
-    }
-
-    private fun segmentedRow(
-        title: String,
-        subtitle: String,
-        options: List<String>,
-        selected: Int,
-        onSelect: (Int) -> Unit,
-    ): View {
-        val column = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(0, dp(12), 0, dp(12))
-        }
-        column.addView(TextView(context).apply {
-            this.text = title
-            setTextColor(Color.WHITE)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
-        })
-        column.addView(TextView(context).apply {
-            this.text = subtitle
-            setTextColor(Color.parseColor("#9AA3AD"))
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
-            setPadding(0, dp(2), 0, dp(8))
-        })
-
-        val row = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL }
-        options.forEachIndexed { index, option ->
-            val isSelected = index == selected
-            row.addView(TextView(context).apply {
-                text = option
-                gravity = Gravity.CENTER
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
-                setTextColor(if (isSelected) Color.parseColor("#101820") else Color.WHITE)
-                background = GradientDrawable().apply {
-                    cornerRadius = dp(16)
-                    setColor(if (isSelected) Color.parseColor("#A8C7FA") else Color.parseColor("#26292E"))
-                }
-                setPadding(dp(10), dp(9), dp(10), dp(9))
-                setOnClickListener { onSelect(index) }
-            }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
-                rightMargin = if (index < options.size - 1) dp(6) else 0
-            })
-        }
-        column.addView(row)
-        return column
     }
 
     private fun dp(value: Int): Int = (value * context.resources.displayMetrics.density).roundToInt()
@@ -491,7 +398,7 @@ class AdvancedSheet(
             orientation = LinearLayout.VERTICAL
             background = GradientDrawable().apply {
                 setColor(Color.parseColor("#121417"))
-                cornerRadii = floatArrayOf(dp(24), dp(24), dp(24), dp(24), 0f, 0f, 0f, 0f)
+                cornerRadii = floatArrayOf(dp(24).toFloat(), dp(24).toFloat(), dp(24).toFloat(), dp(24).toFloat(), 0f, 0f, 0f, 0f)
             }
             setPadding(dp(20), dp(18), dp(20), dp(26))
         }
@@ -599,6 +506,99 @@ class AdvancedSheet(
             setOnCheckedChangeListener { _, value -> onChange(value) }
         })
         return row
+    }
+
+    private fun sliderRow(title: String, subtitle: String, value: Int, onChange: (Int) -> Unit): View {
+        val column = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, dp(12), 0, dp(12))
+        }
+        val header = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val text = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
+        text.addView(TextView(context).apply {
+            this.text = title
+            setTextColor(Color.WHITE)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+        })
+        text.addView(TextView(context).apply {
+            this.text = subtitle
+            setTextColor(Color.parseColor("#9AA3AD"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
+            setPadding(0, dp(2), dp(12), 0)
+        })
+        header.addView(text, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+
+        val readout = TextView(context).apply {
+            this.text = value.toString()
+            setTextColor(Color.WHITE)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+        }
+        header.addView(readout)
+        column.addView(header)
+
+        column.addView(android.widget.SeekBar(context).apply {
+            max = 15
+            progress = (value - 85).coerceIn(0, 15)
+            setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(bar: android.widget.SeekBar, progress: Int, fromUser: Boolean) {
+                    val quality = 85 + progress
+                    readout.text = quality.toString()
+                    if (fromUser) onChange(quality)
+                }
+
+                override fun onStartTrackingTouch(bar: android.widget.SeekBar) = Unit
+                override fun onStopTrackingTouch(bar: android.widget.SeekBar) = Unit
+            })
+        })
+        return column
+    }
+
+    private fun segmentedRow(
+        title: String,
+        subtitle: String,
+        options: List<String>,
+        selected: Int,
+        onSelect: (Int) -> Unit,
+    ): View {
+        val column = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, dp(12), 0, dp(12))
+        }
+        column.addView(TextView(context).apply {
+            this.text = title
+            setTextColor(Color.WHITE)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+        })
+        column.addView(TextView(context).apply {
+            this.text = subtitle
+            setTextColor(Color.parseColor("#9AA3AD"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
+            setPadding(0, dp(2), 0, dp(8))
+        })
+
+        val row = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL }
+        options.forEachIndexed { index, option ->
+            val isSelected = index == selected
+            row.addView(TextView(context).apply {
+                text = option
+                gravity = Gravity.CENTER
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+                setTextColor(if (isSelected) Color.parseColor("#101820") else Color.WHITE)
+                background = GradientDrawable().apply {
+                    cornerRadius = dp(16).toFloat()
+                    setColor(if (isSelected) Color.parseColor("#A8C7FA") else Color.parseColor("#26292E"))
+                }
+                setPadding(dp(10), dp(9), dp(10), dp(9))
+                setOnClickListener { onSelect(index) }
+            }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+                rightMargin = if (index < options.size - 1) dp(6) else 0
+            })
+        }
+        column.addView(row)
+        return column
     }
 
     private fun dp(value: Int): Int = (value * context.resources.displayMetrics.density).roundToInt()

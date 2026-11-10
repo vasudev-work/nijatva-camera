@@ -128,7 +128,7 @@ class DeviceCapabilities(
                 supportsRaw = caps.contains(CameraMetadata.REQUEST_AVAILABLE_CAPABILITIES_RAW),
                 supportsManualSensor = caps.contains(CameraMetadata.REQUEST_AVAILABLE_CAPABILITIES_MANUAL_SENSOR),
                 sensorSize = characteristics.get(CameraCharacteristics.SENSOR_INFO_PIXEL_ARRAY_SIZE) ?: Size(0, 0),
-                activeArray = characteristics.get(CameraCharacteristics.SENSOR_INFO_ACTIVE_ARRAY_RECT) ?: Rect(0, 0, 1, 1),
+                activeArray = characteristics.get(CameraCharacteristics.SENSOR_INFO_ACTIVE_ARRAY_SIZE) ?: Rect(0, 0, 1, 1),
                 jpegSizes = map?.getOutputSizes(android.graphics.ImageFormat.JPEG)?.toList() ?: emptyList(),
                 yuvSizes = map?.getOutputSizes(android.graphics.ImageFormat.YUV_420_888)?.toList() ?: emptyList(),
                 rawSizes = map?.getOutputSizes(android.graphics.ImageFormat.RAW_SENSOR)?.toList() ?: emptyList(),

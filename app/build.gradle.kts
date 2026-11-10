@@ -6,6 +6,7 @@ plugins {
 android {
     namespace = "com.nijatva.camera"
     compileSdk = 35
+    buildToolsVersion = "35.0.0"
 
     defaultConfig {
         applicationId = "com.nijatva.camera"

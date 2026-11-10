@@ -140,7 +140,7 @@ class ImageSaver(private val context: Context) {
 
         if (wideGamut && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
             try {
-                working.colorSpace = android.graphics.ColorSpace.get(android.graphics.ColorSpace.Named.DISPLAY_P3)
+                working.setColorSpace(android.graphics.ColorSpace.get(android.graphics.ColorSpace.Named.DISPLAY_P3))
             } catch (_: Throwable) {
                 // An immutable or hardware bitmap refuses the change; sRGB output
                 // is a fine fallback and must not lose the photo.

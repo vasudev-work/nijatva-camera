@@ -121,7 +121,7 @@ class ProPanel(context: Context) : LinearLayout(context) {
 
     private fun select(tool: Tool) {
         activeTool = tool
-        buttons.forEach { (key, button) -> button.selected = key == tool }
+        buttons.forEach { (key, button) -> button.highlighted = key == tool }
         slider.setSliderEnabled(true)
         slider.resetToAuto()
         slider.setValueLabel("Auto")
@@ -129,7 +129,7 @@ class ProPanel(context: Context) : LinearLayout(context) {
 
     private fun clearActiveTool() {
         activeTool = null
-        buttons.values.forEach { it.selected = false }
+        buttons.values.forEach { it.highlighted = false }
         slider.setSliderEnabled(false)
         slider.setValueLabel("Auto")
     }

@@ -25,7 +25,8 @@ class ToolButton(context: Context) : View(context) {
             invalidate()
         }
 
-    var selected: Boolean = false
+    /** Renamed from `selected` because View already owns that name. */
+    var highlighted: Boolean = false
         set(value) {
             field = value
             invalidate()
@@ -68,13 +69,13 @@ class ToolButton(context: Context) : View(context) {
         val cy = radius + 8f * density
         circle.set(cx - radius, cy - radius, cx + radius, cy + radius)
 
-        circlePaint.color = if (selected) Color.parseColor("#9FC0EE") else Color.parseColor("#33373C")
+        circlePaint.color = if (highlighted) Color.parseColor("#9FC0EE") else Color.parseColor("#33373C")
         canvas.drawOval(circle, circlePaint)
 
-        glyphPaint.color = if (selected) Color.parseColor("#101820") else Color.WHITE
+        glyphPaint.color = if (highlighted) Color.parseColor("#101820") else Color.WHITE
         drawGlyph(canvas, cx, cy, radius * 0.52f)
 
-        captionPaint.color = if (selected) Color.WHITE else Color.parseColor("#C8CDD4")
+        captionPaint.color = if (highlighted) Color.WHITE else Color.parseColor("#C8CDD4")
         canvas.drawText(caption, cx, cy + radius + 16f * density, captionPaint)
     }
 

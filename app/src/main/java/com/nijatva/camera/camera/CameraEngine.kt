@@ -293,7 +293,7 @@ class CameraEngine(
             return
         }
         try {
-            s.capture(buildRequest(CaptureRequest.TEMPLATE_STILL_CAPTURE, reader.surface), null, handler)
+            s.capture(buildRequest(CameraDevice.TEMPLATE_STILL_CAPTURE, reader.surface), null, handler)
         } catch (t: Throwable) {
             callback.onFailure("Capture failed: ${t.message}")
         }
@@ -309,10 +309,10 @@ class CameraEngine(
         val characteristics = manager.getCameraCharacteristics(cameraId)
 
         try {
-            jpegReader?.let { jpeg -> s.capture(buildRequest(CaptureRequest.TEMPLATE_STILL_CAPTURE, jpeg.surface), null, handler) }
+            jpegReader?.let { jpeg -> s.capture(buildRequest(CameraDevice.TEMPLATE_STILL_CAPTURE, jpeg.surface), null, handler) }
 
             s.capture(
-                buildRequest(CaptureRequest.TEMPLATE_STILL_CAPTURE, reader.surface),
+                buildRequest(CameraDevice.TEMPLATE_STILL_CAPTURE, reader.surface),
                 object : CameraCaptureSession.CaptureCallback() {
                     override fun onCaptureCompleted(
                         captureSession: CameraCaptureSession,
@@ -363,13 +363,13 @@ class CameraEngine(
         stepCollected = 0
 
         plan = if (mode == Mode.NIGHT) {
-            listOf(Step(exposure = nightExposureNs(c), iso = nightIso(c), skip = 3, keep = NIGHT_FRAMES))
+            listOf(Step(exposureNs = nightExposureNs(c), iso = nightIso(c), skip = 3, keep = NIGHT_FRAMES))
         } else {
             val base = baseExposureNs(c)
             listOf(
-                Step(exposure = clampExposure(base * 4, c), iso = null, skip = 2, keep = 1),
-                Step(exposure = clampExposure(base, c), iso = null, skip = 2, keep = 1),
-                Step(exposure = clampExposure(base / 4, c), iso = null, skip = 2, keep = 1),
+                Step(exposureNs = clampExposure(base * 4, c), iso = null, skip = 2, keep = 1),
+                Step(exposureNs = clampExposure(base, c), iso = null, skip = 2, keep = 1),
+                Step(exposureNs = clampExposure(base / 4, c), iso = null, skip = 2, keep = 1),
             )
         }
         applyStep()
@@ -379,7 +379,7 @@ class CameraEngine(
         val s = session ?: return
         val step = plan.getOrNull(planIndex) ?: return
         try {
-            val request = buildRequest(CaptureRequest.TEMPLATE_PREVIEW, null, step.iso, step.exposureNs)
+            val request = buildRequest(CameraDevice.TEMPLATE_PREVIEW, null, step.iso, step.exposureNs)
             s.setRepeatingRequest(request, metricsCallback, handler)
             callback.onNotice(
                 if (mode == Mode.NIGHT) "Capturing ${NIGHT_FRAMES} frames, hold still"
@@ -598,7 +598,7 @@ class CameraEngine(
         val s = session ?: return
         try {
             s.setRepeatingRequest(
-                buildRequest(CaptureRequest.TEMPLATE_PREVIEW, null),
+                buildRequest(CameraDevice.TEMPLATE_PREVIEW, null),
                 metricsCallback,
                 handler,
             )
@@ -618,7 +618,7 @@ class CameraEngine(
 
         previewSurface?.let { builder.addTarget(it) }
         target?.let { builder.addTarget(it) }
-        if (template != CaptureRequest.TEMPLATE_STILL_CAPTURE) {
+        if (template != CameraDevice.TEMPLATE_STILL_CAPTURE) {
             yuvReader?.surface?.let { builder.addTarget(it) }
         }
 
