@@ -7,7 +7,7 @@ enum class FlashMode(val label: String) {
 }
 
 enum class HdrMode(val label: String) {
-    OFF("HDR+ off"), ON("HDR+"), ENHANCED("HDR+ enhanced")
+    OFF("Off"), ON("HDR+"), ENHANCED("Enhanced")
 }
 
 enum class TimerDelay(val seconds: Int, val label: String) {

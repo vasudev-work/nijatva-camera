@@ -42,6 +42,21 @@ class GridOverlay(context: Context) : View(context) {
 
     private var rollDegrees = 0f
 
+    private var reticleX = -1f
+    private var reticleY = -1f
+    private val reticlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.parseColor("#FFB020")
+        strokeWidth = 1.6f * resources.displayMetrics.density
+        strokeCap = Paint.Cap.ROUND
+    }
+
+    /** Shows the focus crosshair where the user tapped. */
+    fun showReticle(x: Float, y: Float) {
+        reticleX = x
+        reticleY = y
+        invalidate()
+    }
+
     fun setRoll(degrees: Float) {
         rollDegrees = degrees
         if (levelVisible) invalidate()
@@ -58,6 +73,19 @@ class GridOverlay(context: Context) : View(context) {
         }
 
         if (levelVisible) drawLevel(canvas)
+        drawReticle(canvas)
+    }
+
+    private fun drawReticle(canvas: Canvas) {
+        val x = if (reticleX < 0f) width / 2f else reticleX
+        val y = if (reticleY < 0f) height / 2f else reticleY
+        val arm = 11f * resources.displayMetrics.density
+        val gap = 4f * resources.displayMetrics.density
+
+        canvas.drawLine(x - arm, y, x - gap, y, reticlePaint)
+        canvas.drawLine(x + gap, y, x + arm, y, reticlePaint)
+        canvas.drawLine(x, y - arm, x, y - gap, reticlePaint)
+        canvas.drawLine(x, y + gap, x, y + arm, reticlePaint)
     }
 
     private fun drawDivisions(canvas: Canvas, fractions: List<Float>) {

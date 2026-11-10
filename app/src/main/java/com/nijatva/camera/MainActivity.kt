@@ -42,6 +42,7 @@ import com.nijatva.camera.settings.Settings
 import com.nijatva.camera.settings.SettingsStore
 import com.nijatva.camera.ui.AutoFitSurfaceView
 import com.nijatva.camera.ui.GridOverlay
+import com.nijatva.camera.ui.IconButton
 import com.nijatva.camera.ui.SettingsSheet
 import com.nijatva.camera.ui.ProPanel
 import com.nijatva.camera.ui.SphereOverlay
@@ -69,11 +70,16 @@ class MainActivity : AppCompatActivity(), CameraEngine.Callback {
     private lateinit var modeBar: LinearLayout
     private lateinit var proPanel: ProPanel
     private lateinit var infoChip: TextView
-    private lateinit var aspectButton: TextView
     private lateinit var topBar: LinearLayout
     private lateinit var bottomBar: LinearLayout
 
     private lateinit var store: SettingsStore
+    private lateinit var flashButton: IconButton
+    private lateinit var menuButton: IconButton
+    private lateinit var gridButton: IconButton
+    private lateinit var hdrButton: IconButton
+    private val zoomChips = mutableMapOf<Float, TextView>()
+    private var currentMode: Mode = Mode.PHOTO
     private var settings = Settings()
 
     private val modeChips = mutableMapOf<Mode, TextView>()
@@ -127,6 +133,9 @@ class MainActivity : AppCompatActivity(), CameraEngine.Callback {
     private fun buildUi() {
         val root = FrameLayout(this)
         root.setBackgroundColor(Color.BLACK)
+        // The preview is deliberately larger than the screen in cover mode, so
+        // the parent has to crop it rather than let it spill.
+        root.clipChildren = true
 
         preview = AutoFitSurfaceView(this)
         root.addView(preview, FrameLayout.LayoutParams(
@@ -143,38 +152,105 @@ class MainActivity : AppCompatActivity(), CameraEngine.Callback {
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
         ))
 
+        // ---- top chrome: flash on the left, menu on the right
         topBar = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-        }
-        statusStrip = StatusStrip(this)
-        topBar.addView(statusStrip, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-        ))
-
-        val buttonRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(12), dp(6), dp(12), dp(6))
+            setPadding(dp(10), dp(6), dp(10), dp(6))
         }
-        infoChip = TextView(this).apply {
-            setTextColor(Color.WHITE)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
-            text = "starting camera"
+        flashButton = IconButton(this).apply {
+            kind = IconButton.Kind.FLASH_OFF
+            setOnClickListener { cycleFlash() }
         }
-        buttonRow.addView(infoChip, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        topBar.addView(flashButton)
+        topBar.addView(View(this), LinearLayout.LayoutParams(0, dp(1), 1f))
+        menuButton = IconButton(this).apply {
+            kind = IconButton.Kind.MENU
+            setOnClickListener { openSettings() }
+        }
+        topBar.addView(menuButton)
+        root.addView(topBar, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP
+        ))
 
-        aspectButton = iconButton("4:3") { cycleAspect() }
-        buttonRow.addView(aspectButton)
-        buttonRow.addView(iconButton("Set") { openSettings() })
-        buttonRow.addView(iconButton("Info") { showDiagnostics() })
-        buttonRow.addView(iconButton("Flip") { engine.switchCamera() })
-        buttonRow.addView(iconButton("Flash") { toggleFlash() })
-        topBar.addView(buttonRow, LinearLayout.LayoutParams(
+        // ---- bottom chrome
+        bottomBar = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(10), dp(6), dp(10), dp(14))
+        }
+
+        statusStrip = StatusStrip(this).apply { visibility = View.GONE }
+        bottomBar.addView(statusStrip, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
         ))
 
-        root.addView(topBar, FrameLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP
+        statusText = TextView(this).apply {
+            setTextColor(Color.parseColor("#D6DBE1"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
+            gravity = Gravity.CENTER
+            text = ""
+            setPadding(0, dp(2), 0, dp(6))
+        }
+        bottomBar.addView(statusText)
+
+        // zoom pill and the two quick toggles, sitting above the mode row
+        val quickRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, 0, 0, dp(8))
+        }
+        quickRow.addView(View(this), LinearLayout.LayoutParams(0, dp(1), 1f))
+        quickRow.addView(zoomPill())
+        quickRow.addView(View(this), LinearLayout.LayoutParams(0, dp(1), 1f))
+
+        gridButton = IconButton(this).apply {
+            kind = IconButton.Kind.GRID
+            setOnClickListener { cycleGrid() }
+        }
+        hdrButton = IconButton(this).apply {
+            kind = IconButton.Kind.HDR
+            setOnClickListener { cycleHdr() }
+        }
+        quickRow.addView(gridButton)
+        quickRow.addView(hdrButton, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT
+        ).apply { leftMargin = dp(6) })
+        bottomBar.addView(quickRow)
+
+        modeBar = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            setPadding(dp(4), 0, dp(4), dp(6))
+        }
+        Mode.values().forEach { mode ->
+            val tab = modeTab(mode)
+            modeChips[mode] = tab
+            modeBar.addView(tab)
+        }
+        bottomBar.addView(HorizontalScrollView(this).apply {
+            isHorizontalScrollBarEnabled = false
+            addView(modeBar)
+        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+
+        val shutterRow = FrameLayout(this).apply { minimumHeight = dp(76) }
+        shutterRow.addView(thumbnail(), FrameLayout.LayoutParams(
+            dp(48), dp(48), Gravity.START or Gravity.CENTER_VERTICAL
+        ).apply { leftMargin = dp(12) })
+        shutterRow.addView(shutterButton(), FrameLayout.LayoutParams(
+            dp(72), dp(72), Gravity.CENTER
+        ))
+        shutterRow.addView(IconButton(this).apply {
+            kind = IconButton.Kind.FLIP
+            setOnClickListener { engine.switchCamera() }
+        }, FrameLayout.LayoutParams(
+            dp(44), dp(44), Gravity.END or Gravity.CENTER_VERTICAL
+        ).apply { rightMargin = dp(14) })
+        bottomBar.addView(shutterRow, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+        ))
+
+        root.addView(bottomBar, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM
         ))
 
         proPanel = ProPanel(this).apply {
@@ -209,49 +285,7 @@ class MainActivity : AppCompatActivity(), CameraEngine.Callback {
         }
         root.addView(proPanel, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM
-        ).apply { bottomMargin = dp(136) })
-
-        bottomBar = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(8), dp(8), dp(8), dp(16))
-            setBackgroundColor(Color.argb(160, 0, 0, 0))
-        }
-
-        statusText = TextView(this).apply {
-            setTextColor(Color.WHITE)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
-            gravity = Gravity.CENTER
-            text = ""
-        }
-        bottomBar.addView(statusText)
-
-        modeBar = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER
-        }
-        Mode.values().forEach { mode ->
-            val chip = modeChip(mode)
-            modeChips[mode] = chip
-            modeBar.addView(chip)
-        }
-        bottomBar.addView(HorizontalScrollView(this).apply {
-            isHorizontalScrollBarEnabled = false
-            addView(modeBar)
-        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
-
-        val shutterRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER
-            setPadding(0, dp(10), 0, 0)
-        }
-        shutterRow.addView(View(this), LinearLayout.LayoutParams(0, dp(1), 1f))
-        shutterRow.addView(shutterButton())
-        shutterRow.addView(sideButton(), LinearLayout.LayoutParams(dp(72), dp(72)))
-        bottomBar.addView(shutterRow)
-
-        root.addView(bottomBar, FrameLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM
-        ))
+        ).apply { bottomMargin = dp(178) })
 
         setContentView(root)
         applyInsets(root)
@@ -260,7 +294,7 @@ class MainActivity : AppCompatActivity(), CameraEngine.Callback {
             override fun onScale(detector: ScaleGestureDetector): Boolean {
                 val next = (engine.currentSettings.zoom * detector.scaleFactor).coerceIn(1f, 8f)
                 engine.updateSettings { it.copy(zoom = next) }
-                statusText.text = "Zoom ${"%.1f".format(next)}x"
+                updateZoomChips(next)
                 return true
             }
         })
@@ -268,7 +302,7 @@ class MainActivity : AppCompatActivity(), CameraEngine.Callback {
         val tapDetector = GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
             override fun onSingleTapUp(event: MotionEvent): Boolean {
                 engine.setMeteringPoint(event.x / preview.width, event.y / preview.height)
-                statusText.text = "Focus locked"
+                gridOverlay.showReticle(event.x, event.y)
                 return true
             }
         })
@@ -286,83 +320,141 @@ class MainActivity : AppCompatActivity(), CameraEngine.Callback {
         ViewCompat.setOnApplyWindowInsetsListener(root) { _, insets ->
             val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
             topBar.updatePadding(top = bars.top + dp(4))
-            bottomBar.updatePadding(bottom = dp(10) + bars.bottom)
+            bottomBar.updatePadding(bottom = dp(12) + bars.bottom)
             insets
         }
         ViewCompat.requestApplyInsets(root)
     }
 
-    private fun modeChip(mode: Mode): TextView = TextView(this).apply {
-        text = mode.label
+    /** Mode selector as plain uppercase text, the way the stock camera shows it. */
+    private fun modeTab(mode: Mode): TextView = TextView(this).apply {
+        text = mode.label.uppercase()
         setTextColor(Color.WHITE)
         setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+        letterSpacing = 0.08f
         gravity = Gravity.CENTER
-        setPadding(dp(12), dp(7), dp(12), dp(7))
+        setPadding(dp(10), dp(8), dp(10), dp(8))
         setOnClickListener { selectMode(mode) }
+    }
+
+    private fun zoomPill(): View {
+        val pill = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            background = GradientDrawable().apply {
+                cornerRadius = dp(18).toFloat()
+                setColor(Color.argb(70, 0, 0, 0))
+            }
+            setPadding(dp(4), dp(3), dp(4), dp(3))
+        }
+        listOf(1f, 2f).forEach { factor ->
+            val chip = TextView(this).apply {
+                text = if (factor == 1f) "1x" else "2x"
+                setTextColor(if (factor == 1f) Color.parseColor("#101418") else Color.WHITE)
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+                gravity = Gravity.CENTER
+                background = GradientDrawable().apply {
+                    cornerRadius = dp(14).toFloat()
+                    setColor(if (factor == 1f) Color.WHITE else Color.TRANSPARENT)
+                }
+                setPadding(dp(12), dp(4), dp(12), dp(4))
+                setOnClickListener {
+                    engine.updateSettings { it.copy(zoom = factor) }
+                    updateZoomChips(factor)
+                }
+            }
+            zoomChips[factor] = chip
+            pill.addView(chip)
+        }
+        return pill
+    }
+
+    private fun updateZoomChips(zoom: Float) {
+        val selected = if (zoom >= 1.6f) 2f else 1f
+        zoomChips.forEach { (factor, chip) ->
+            val chosen = factor == selected
+            chip.setTextColor(if (chosen) Color.parseColor("#101418") else Color.WHITE)
+            chip.background = GradientDrawable().apply {
+                cornerRadius = dp(14).toFloat()
+                setColor(if (chosen) Color.WHITE else Color.TRANSPARENT)
+            }
+        }
+    }
+
+    private fun thumbnail(): View = View(this).apply {
+        background = GradientDrawable().apply {
+            cornerRadius = dp(8).toFloat()
+            setColor(Color.parseColor("#2A2E33"))
+            setStroke(dp(1), Color.argb(90, 255, 255, 255))
+        }
+        setOnClickListener {
+            Toast.makeText(context, "Photos are saved to Pictures/NijatvaCamera", Toast.LENGTH_SHORT).show()
+        }
     }
 
     private fun shutterButton(): View = View(this).apply {
         background = GradientDrawable().apply {
             shape = GradientDrawable.OVAL
             setColor(Color.WHITE)
-            setStroke(dp(4), Color.argb(180, 255, 255, 255))
+            setStroke(dp(5), Color.argb(150, 255, 255, 255))
         }
         setOnClickListener {
+            if (settings.vibrationOnShutter) {
+                window.decorView.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+            }
             if (panoActive) {
                 engine.capturePanoramaFrame(gyro.yawDegrees)
                 lastPanoYaw = gyro.yawDegrees
+            } else if (currentMode == Mode.PANORAMA) {
+                finishPanorama()
             } else {
-                if (settings.vibrationOnShutter) {
-                    window.decorView.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
-                }
                 captureWithTimer()
             }
         }
-        layoutParams = LinearLayout.LayoutParams(dp(72), dp(72)).apply {
-            leftMargin = dp(20)
-            rightMargin = dp(20)
-        }
     }
 
-    /** Right-hand button: finishes a panorama, otherwise resets everything to auto. */
-    private fun sideButton(): TextView = TextView(this).apply {
-        text = "AUTO"
-        setTextColor(Color.WHITE)
-        setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
-        gravity = Gravity.CENTER
-        setOnClickListener {
-            if (panoActive) {
-                finishPanorama()
-            } else {
-                proPanel.resetAll()
-                engine.updateSettings { it.copy(zoom = 1f) }
-                statusText.text = "Back to automatic"
-            }
+    private fun cycleFlash() {
+        val next = when (settings.flash) {
+            FlashMode.OFF -> FlashMode.AUTO
+            FlashMode.AUTO -> FlashMode.ON
+            FlashMode.ON -> FlashMode.OFF
         }
+        settings = settings.copy(flash = next)
+        store.save(settings)
+        applySettings()
     }
 
-    private fun iconButton(label: String, action: () -> Unit): TextView = TextView(this).apply {
-        text = label
-        setTextColor(Color.WHITE)
-        setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
-        gravity = Gravity.CENTER
-        setPadding(dp(10), dp(8), dp(10), dp(8))
-        setOnClickListener { action() }
+    private fun cycleGrid() {
+        val next = GridType.values()[(settings.grid.ordinal + 1) % GridType.values().size]
+        settings = settings.copy(grid = next)
+        store.save(settings)
+        applySettings()
+        statusText.text = next.label
+    }
+
+    private fun cycleHdr() {
+        val next = com.nijatva.camera.settings.HdrMode.values()[
+            (settings.hdr.ordinal + 1) % com.nijatva.camera.settings.HdrMode.values().size
+        ]
+        settings = settings.copy(hdr = next)
+        store.save(settings)
+        applySettings()
+        statusText.text = "HDR+ ${next.label}"
     }
 
     private fun selectMode(mode: Mode) {
         if (panoActive && mode != Mode.PANORAMA) stopPanorama()
+        currentMode = mode
 
         engine.setMode(mode)
         proPanel.visibility = if (mode == Mode.PRO) View.VISIBLE else View.GONE
 
         modeChips.forEach { (chipMode, chip) ->
-            chip.background = GradientDrawable().apply {
-                cornerRadius = dp(16).toFloat()
-                setColor(if (chipMode == mode) Color.argb(235, 255, 255, 255) else Color.argb(60, 255, 255, 255))
-            }
-            chip.setTextColor(if (chipMode == mode) Color.BLACK else Color.WHITE)
+            val chosen = chipMode == mode
+            chip.setTextColor(if (chosen) Color.parseColor("#FFB020") else Color.WHITE)
+            chip.alpha = if (chosen) 1f else 0.75f
         }
+        statusStrip.visibility = if (mode == Mode.PRO) View.VISIBLE else View.GONE
 
         if (mode == Mode.PANORAMA) startPanorama()
     }
@@ -452,9 +544,16 @@ class MainActivity : AppCompatActivity(), CameraEngine.Callback {
         val wanted = if (settings.ratio == Ratio.FULL) Aspect.RATIO_4_3 else Aspect.RATIO_16_9
         if (engine.aspect != wanted) {
             engine.setAspect(wanted)
-            aspectButton.text = wanted.label
             caps?.preferredJpegSize(wanted.ratio)?.let { preview.setAspectRatio(it.width, it.height) }
         }
+
+        flashButton.kind = when (settings.flash) {
+            FlashMode.OFF -> IconButton.Kind.FLASH_OFF
+            FlashMode.AUTO -> IconButton.Kind.FLASH_AUTO
+            FlashMode.ON -> IconButton.Kind.FLASH_ON
+        }
+        hdrButton.active = settings.hdr != com.nijatva.camera.settings.HdrMode.OFF
+        gridButton.active = settings.grid != GridType.NONE
 
         gridOverlay.gridType = settings.grid
         gridOverlay.levelVisible = settings.framingHints
@@ -498,13 +597,6 @@ class MainActivity : AppCompatActivity(), CameraEngine.Callback {
         }
     }
 
-    private fun cycleAspect() {
-        val next = engine.aspect.next()
-        engine.setAspect(next)
-        aspectButton.text = next.label
-        caps?.preferredJpegSize(next.ratio)?.let { preview.setAspectRatio(it.width, it.height) }
-    }
-
     private fun toggleFlash() {
         val torchOn = !engine.currentSettings.torchOn
         engine.updateSettings { it.copy(torchOn = torchOn, autoFlash = false) }
@@ -530,7 +622,6 @@ class MainActivity : AppCompatActivity(), CameraEngine.Callback {
         this.caps = caps
         infoChip.text = "${caps.levelName}  RAW ${if (caps.supportsRaw) "yes" else "no"}"
         caps.preferredJpegSize(engine.aspect.ratio)?.let { preview.setAspectRatio(it.width, it.height) }
-        aspectButton.text = engine.aspect.label
 
         val isoRange = caps.isoRange
         val exposureRange = caps.exposureRange

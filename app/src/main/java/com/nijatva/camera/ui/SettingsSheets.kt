@@ -37,7 +37,9 @@ class SettingsSheet(
 ) : Dialog(context, R.style.SheetDialog) {
 
     private var tab = 0
-    private val content = LinearLayout(context)
+    private val content = LinearLayout(context).apply {
+        orientation = LinearLayout.VERTICAL
+    }
 
     init {
         val root = LinearLayout(context).apply {
@@ -60,8 +62,9 @@ class SettingsSheet(
         root.addView(scroll)
 
         setContentView(root)
+        val sheetHeight = (context.resources.displayMetrics.heightPixels * 0.85f).toInt()
         window?.apply {
-            setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+            setLayout(ViewGroup.LayoutParams.MATCH_PARENT, sheetHeight)
             setGravity(Gravity.BOTTOM)
             setBackgroundDrawableResource(android.R.color.transparent)
         }
@@ -326,6 +329,7 @@ class SettingsSheet(
             row.addView(TextView(context).apply {
                 text = option
                 gravity = Gravity.CENTER
+                maxLines = 1
                 setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
                 setTextColor(if (isSelected) Color.parseColor("#101820") else Color.WHITE)
                 background = GradientDrawable().apply {
@@ -334,11 +338,14 @@ class SettingsSheet(
                 }
                 setPadding(dp(10), dp(9), dp(10), dp(9))
                 setOnClickListener { onSelect(index) }
-            }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
-                rightMargin = if (index < options.size - 1) dp(6) else 0
-            })
+            }, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply { rightMargin = dp(6) })
         }
-        column.addView(row)
+        column.addView(android.widget.HorizontalScrollView(context).apply {
+            isHorizontalScrollBarEnabled = false
+            addView(row)
+        })
         return column
     }
 
@@ -410,17 +417,25 @@ class AdvancedSheet(
             setPadding(0, 0, 0, dp(10))
         })
 
-        root.addView(toggle(context, "RAW/JPEG control",
+        val column = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
+        root.addView(ScrollView(context).apply {
+            isFillViewport = true
+            addView(column)
+        }, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f
+        ))
+
+        column.addView(toggle(context, "RAW/JPEG control",
             "Save a DNG alongside the JPEG in RAW mode", settings.rawPlusJpeg) {
             settings = settings.copy(rawPlusJpeg = it); onChange(settings)
         })
 
-        root.addView(toggle(context, "Timer light",
+        column.addView(toggle(context, "Timer light",
             "Keep the torch on during the countdown", settings.timerLight) {
             settings = settings.copy(timerLight = it); onChange(settings)
         })
 
-        root.addView(sliderRow(
+        column.addView(sliderRow(
             title = "JPEG quality",
             subtitle = "Higher means a larger file and fewer compression artefacts",
             value = settings.jpegQuality,
@@ -429,7 +444,7 @@ class AdvancedSheet(
             onChange(settings)
         })
 
-        root.addView(segmentedRow(
+        column.addView(segmentedRow(
             title = "RAW bit depth",
             subtitle = "10-bit packs four pixels into five bytes; half the DNG size",
             options = listOf("10-bit", "16-bit"),
@@ -439,27 +454,27 @@ class AdvancedSheet(
             onChange(settings)
         })
 
-        root.addView(toggle(context, "Optical stabilization (OIS)",
+        column.addView(toggle(context, "Optical stabilization (OIS)",
             "Hardware stabilisation. Off can allow a longer handheld exposure", settings.ois) {
             settings = settings.copy(ois = it); onChange(settings)
         })
 
-        root.addView(toggle(context, "Vibration on shutter",
+        column.addView(toggle(context, "Vibration on shutter",
             "Short haptic tick when a photo is taken", settings.vibrationOnShutter) {
             settings = settings.copy(vibrationOnShutter = it); onChange(settings)
         })
 
-        root.addView(toggle(context, "Rich colour in photos",
+        column.addView(toggle(context, "Rich colour in photos",
             "Save wide-gamut (Display P3) instead of sRGB", settings.wideColour) {
             settings = settings.copy(wideColour = it); onChange(settings)
         })
 
-        root.addView(toggle(context, "Framing hints",
+        column.addView(toggle(context, "Framing hints",
             "Level indicator while framing", settings.framingHints) {
             settings = settings.copy(framingHints = it); onChange(settings)
         })
 
-        root.addView(TextView(context).apply {
+        column.addView(TextView(context).apply {
             text = "Not available in this app: HDRnet, Top Shot, depth capture, " +
                 "astrophotography time lapse and Ultra HDR gain maps. Each needs " +
                 "processing this app does not implement; see docs/SETTINGS.md."
@@ -469,8 +484,9 @@ class AdvancedSheet(
         })
 
         setContentView(root)
+        val sheetHeight = (context.resources.displayMetrics.heightPixels * 0.85f).toInt()
         window?.apply {
-            setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+            setLayout(ViewGroup.LayoutParams.MATCH_PARENT, sheetHeight)
             setGravity(Gravity.BOTTOM)
             setBackgroundDrawableResource(android.R.color.transparent)
         }

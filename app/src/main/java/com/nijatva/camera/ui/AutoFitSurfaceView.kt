@@ -19,6 +19,16 @@ class AutoFitSurfaceView @JvmOverloads constructor(
 
     private var aspectRatio = 4f / 3f
 
+    /**
+     * Fill the parent and crop, rather than fitting inside it.
+     *
+     * A stock camera fills the screen with the viewfinder; letterboxing a 4:3
+     * stream on a 20:9 panel leaves two black bands that make the app look
+     * unfinished. Cover mode crops the preview, and the capture keeps the full
+     * frame - the same trade every camera app makes.
+     */
+    var coverMode: Boolean = true
+
     fun setAspectRatio(width: Int, height: Int) {
         require(width > 0 && height > 0) { "Preview size must be positive" }
         aspectRatio = width.toFloat() / height.toFloat()
@@ -33,10 +43,18 @@ class AutoFitSurfaceView @JvmOverloads constructor(
         if (width == 0 || height == 0) return
 
         val viewAspect = width.toFloat() / height.toFloat()
-        if (viewAspect > aspectRatio) {
-            setMeasuredDimension((height * aspectRatio).roundToInt(), height)
+        if (coverMode) {
+            if (viewAspect > aspectRatio) {
+                setMeasuredDimension(width, (width / aspectRatio).roundToInt())
+            } else {
+                setMeasuredDimension((height * aspectRatio).roundToInt(), height)
+            }
         } else {
-            setMeasuredDimension(width, (width / aspectRatio).roundToInt())
+            if (viewAspect > aspectRatio) {
+                setMeasuredDimension((height * aspectRatio).roundToInt(), height)
+            } else {
+                setMeasuredDimension(width, (width / aspectRatio).roundToInt())
+            }
         }
     }
 }
