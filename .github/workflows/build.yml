@@ -23,12 +23,19 @@ jobs:
         with:
           gradle-version: '8.10.2'
 
-      - name: Assemble debug APK
-        run: gradle :app:assembleDebug --no-daemon --stacktrace
+      - name: Assemble both editions
+        run: gradle :app:assembleFullDebug :app:assembleLiteDebug --no-daemon --stacktrace
 
-      - name: Upload APK
+      - name: Upload full APK
         uses: actions/upload-artifact@v4
         with:
-          name: nijatva-camera-debug
-          path: app/build/outputs/apk/debug/*.apk
+          name: nijatva-full-debug
+          path: app/build/outputs/apk/full/debug/*.apk
+          if-no-files-found: error
+
+      - name: Upload lite APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: nijatva-lite-debug
+          path: app/build/outputs/apk/lite/debug/*.apk
           if-no-files-found: error

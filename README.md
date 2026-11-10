@@ -38,6 +38,22 @@ the app.
   stacking and fusion; autofocus speed, lens softness and rolling shutter are
   hardware.
 
+## Two editions
+
+The same engine ships as two installable apps, so both can sit side by side on a
+phone:
+
+| | Package | Modes | Notes |
+|---|---|---|---|
+| **Nijatva** | `com.nijatva.camera` | Photo, Night, HDR, Pro, Sphere, RAW | everything |
+| **Nijatva Lite** | `com.nijatva.camera.lite` | Photo, Night, Pro | panorama, sphere and RAW hidden |
+
+Lite is a scope decision, not a size trick: the code is shared and gated on
+`BuildConfig.LITE`, so the APK is the same ~7.7 MB. It exists because three modes
+that work beat six that need explaining. A minified release build would cut it to
+roughly half, but R8 plus a camera pipeline plus no test device is a bad trade
+for now.
+
 ## Build
 
 1. Open the project folder in Android Studio (Ladybug or newer).
@@ -48,7 +64,7 @@ the app.
    scoped-storage paths without any legacy permission.
 
 ```
-gradle :app:assembleDebug        # Gradle 8.10.2, JDK 17
+gradle :app:assembleLiteDebug :app:assembleFullDebug   # Gradle 8.10.2, JDK 17
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 

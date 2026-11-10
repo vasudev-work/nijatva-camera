@@ -23,6 +23,28 @@ android {
         }
     }
 
+    buildFeatures {
+        buildConfig = true
+    }
+
+    flavorDimensions += "edition"
+    productFlavors {
+        // The full build: every mode, panorama included.
+        create("full") {
+            dimension = "edition"
+            resValue("string", "app_name", "Nijatva")
+            buildConfigField("boolean", "LITE", "false")
+        }
+        // Lite: three modes, no panorama, no sphere guidance. Same engine.
+        create("lite") {
+            dimension = "edition"
+            applicationIdSuffix = ".lite"
+            versionNameSuffix = "-lite"
+            resValue("string", "app_name", "Nijatva Lite")
+            buildConfigField("boolean", "LITE", "true")
+        }
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17

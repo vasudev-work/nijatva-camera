@@ -79,6 +79,14 @@ class MainActivity : AppCompatActivity(), CameraEngine.Callback {
     private lateinit var hdrButton: IconButton
     private val zoomChips = mutableMapOf<Float, TextView>()
     private var currentMode: Mode = Mode.PHOTO
+
+    /**
+     * Lite keeps the three modes that earn their place on a mid-range sensor:
+     * a plain shot, a stacked night shot, and manual control. Panorama and RAW
+     * are still in the engine, just not offered.
+     */
+    private val availableModes: List<Mode> =
+        if (BuildConfig.LITE) listOf(Mode.PHOTO, Mode.NIGHT, Mode.PRO) else Mode.values().toList()
     private var settings = Settings()
 
     private val modeChips = mutableMapOf<Mode, TextView>()
@@ -213,6 +221,7 @@ class MainActivity : AppCompatActivity(), CameraEngine.Callback {
             setOnClickListener { cycleHdr() }
         }
         quickRow.addView(gridButton)
+        if (BuildConfig.LITE) hdrButton.visibility = View.GONE
         quickRow.addView(hdrButton, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT
         ).apply { leftMargin = dp(6) })
@@ -223,7 +232,7 @@ class MainActivity : AppCompatActivity(), CameraEngine.Callback {
             gravity = Gravity.CENTER
             setPadding(dp(4), 0, dp(4), dp(6))
         }
-        Mode.values().forEach { mode ->
+        availableModes.forEach { mode ->
             val tab = modeTab(mode)
             modeChips[mode] = tab
             modeBar.addView(tab)
@@ -444,6 +453,7 @@ class MainActivity : AppCompatActivity(), CameraEngine.Callback {
     }
 
     private fun selectMode(mode: Mode) {
+        if (mode !in availableModes) return
         if (panoActive && mode != Mode.PANORAMA) stopPanorama()
         currentMode = mode
 
