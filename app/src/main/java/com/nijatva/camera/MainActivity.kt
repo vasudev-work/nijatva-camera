@@ -118,6 +118,8 @@ class MainActivity : AppCompatActivity(), CameraEngine.Callback {
         } else {
             requestPermissions(arrayOf(Manifest.permission.CAMERA), REQUEST_CAMERA)
         }
+
+        showPreviousCrash()
     }
 
     override fun onDestroy() {
@@ -682,6 +684,21 @@ class MainActivity : AppCompatActivity(), CameraEngine.Callback {
             return true
         }
         return super.dispatchKeyEvent(event)
+    }
+
+    /** If the last run died, show why before anything else. */
+    private fun showPreviousCrash() {
+        val file = NijatvaApp.crashFile(this)
+        if (!file.exists()) return
+        val text = runCatching { file.readText() }.getOrNull() ?: return
+        if (text.isBlank()) return
+
+        file.delete()
+        AlertDialog.Builder(this)
+            .setTitle("Last run crashed")
+            .setMessage(text.take(4000))
+            .setPositiveButton("Close", null)
+            .show()
     }
 
     // ---------------------------------------------------------------- plumbing
