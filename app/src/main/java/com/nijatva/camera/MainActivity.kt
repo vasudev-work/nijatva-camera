@@ -69,7 +69,6 @@ class MainActivity : AppCompatActivity(), CameraEngine.Callback {
     private lateinit var statusText: TextView
     private lateinit var modeBar: LinearLayout
     private lateinit var proPanel: ProPanel
-    private lateinit var infoChip: TextView
     private lateinit var topBar: LinearLayout
     private lateinit var bottomBar: LinearLayout
 
@@ -622,7 +621,6 @@ class MainActivity : AppCompatActivity(), CameraEngine.Callback {
 
     override fun onReady(caps: DeviceCapabilities) = runOnUiThread {
         this.caps = caps
-        infoChip.text = "${caps.levelName}  RAW ${if (caps.supportsRaw) "yes" else "no"}"
         caps.preferredJpegSize(engine.aspect.ratio)?.let { preview.setAspectRatio(it.width, it.height) }
 
         val isoRange = caps.isoRange
@@ -637,7 +635,7 @@ class MainActivity : AppCompatActivity(), CameraEngine.Callback {
                 maxEvSteps = evMax,
             )
         }
-        statusText.text = "Ready"
+        statusText.text = "${caps.levelName} · RAW ${if (caps.supportsRaw) "yes" else "no"}"
     }
 
     override fun onMetrics(sensitivity: Int, exposureNs: Long, afState: Int) = runOnUiThread {
