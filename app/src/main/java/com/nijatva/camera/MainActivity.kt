@@ -658,7 +658,7 @@ class MainActivity : AppCompatActivity(), CameraEngine.Callback {
     }
 
     override fun onSaved(uri: Uri, message: String) = runOnUiThread {
-        statusText.text = message
+        statusText.text = "$message · DCIM/NijatvaCamera"
         Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
     }
 

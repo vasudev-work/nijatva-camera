@@ -48,9 +48,13 @@ the app.
    scoped-storage paths without any legacy permission.
 
 ```
-./gradlew :app:assembleDebug
+gradle :app:assembleDebug        # Gradle 8.10.2, JDK 17
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
+
+`.github/workflows/build.yml` builds the APK on every push and uploads it as a
+workflow artifact, so a build no longer depends on any one machine. The wrapper
+jar is deliberately not committed; CI installs Gradle 8.10.2 itself.
 
 Only the `CAMERA` permission is requested. Images go to
 `Pictures/NijatvaCamera/`.
