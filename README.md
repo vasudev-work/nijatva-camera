@@ -38,6 +38,14 @@ the app.
   stacking and fusion; autofocus speed, lens softness and rolling shutter are
   hardware.
 
+## Web build
+
+`web/index.html` is the same camera rebuilt against the browser stack
+(`getUserMedia`): photo, night stacking on a canvas, burst, torch, zoom, grid and
+timer, in one self-contained file. It cannot do RAW, manual ISO/shutter, exposure
+bracketing or gyro panorama - no browser API exposes those - and says so on the
+page itself.
+
 ## Two editions
 
 The same engine ships as two installable apps, so both can sit side by side on a

@@ -1,0 +1,996 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#0b0d0f">
+<title>Nijatva — browser camera</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600&family=Fragment+Mono:ital@0;1&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0b0d0f;
+    --surface: #14181b;
+    --surface-2: #1c2126;
+    --line: rgba(255, 255, 255, 0.09);
+    --text: #eef1f3;
+    --dim: #8b959c;
+    --amber: #ffb020;
+    --amber-dim: rgba(255, 176, 32, 0.16);
+    --red: #e0603f;
+    --font: "Bricolage Grotesque", "Segoe UI", sans-serif;
+    --mono: "Fragment Mono", ui-monospace, monospace;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  body {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 40px;
+    padding: 24px;
+    background:
+      radial-gradient(120% 80% at 50% 0%, #161b1f 0%, var(--bg) 60%);
+  }
+
+  /* ---------------------------------------------------------------- stage */
+
+  .stage {
+    position: relative;
+    width: min(420px, 100%);
+    aspect-ratio: 9 / 19.5;
+    max-height: calc(100vh - 48px);
+    background: #000;
+    border-radius: 28px;
+    overflow: hidden;
+    border: 1px solid var(--line);
+    box-shadow: 0 30px 80px rgba(0, 0, 0, 0.6);
+    isolation: isolate;
+  }
+
+  video#preview {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    background: #000;
+    transition: transform 0.25s ease;
+  }
+
+  video#preview.mirrored { transform: scaleX(-1); }
+
+  .scrim {
+    position: absolute;
+    left: 0;
+    right: 0;
+    height: 190px;
+    pointer-events: none;
+    z-index: 2;
+  }
+  .scrim.top {
+    top: 0;
+    background: linear-gradient(to bottom, rgba(0, 0, 0, 0.55), transparent);
+  }
+  .scrim.bottom {
+    bottom: 0;
+    background: linear-gradient(to top, rgba(0, 0, 0, 0.72), transparent);
+  }
+
+  /* ---------------------------------------------------------------- chrome */
+
+  .top, .bottom, .quick {
+    position: absolute;
+    left: 0;
+    right: 0;
+    z-index: 4;
+    display: flex;
+    align-items: center;
+  }
+
+  .top {
+    top: 0;
+    justify-content: space-between;
+    padding: 16px 14px;
+  }
+
+  .bottom {
+    bottom: 0;
+    flex-direction: column;
+    gap: 10px;
+    padding: 12px 14px 22px;
+  }
+
+  .quick {
+    bottom: 168px;
+    justify-content: center;
+    gap: 8px;
+    pointer-events: none;
+  }
+  .quick > * { pointer-events: auto; }
+
+  .icon-btn {
+    width: 42px;
+    height: 42px;
+    border-radius: 50%;
+    border: 1px solid var(--line);
+    background: rgba(10, 12, 14, 0.55);
+    backdrop-filter: blur(12px);
+    color: var(--text);
+    display: grid;
+    place-items: center;
+    cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease, transform 0.1s ease;
+  }
+  .icon-btn:hover { background: rgba(28, 33, 38, 0.9); }
+  .icon-btn:active { transform: scale(0.94); }
+  .icon-btn.active { background: var(--text); color: #101418; border-color: transparent; }
+  .icon-btn svg { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+
+  .zoom-pill {
+    display: flex;
+    gap: 2px;
+    padding: 3px;
+    border-radius: 999px;
+    background: rgba(10, 12, 14, 0.55);
+    backdrop-filter: blur(12px);
+    border: 1px solid var(--line);
+  }
+  .zoom-pill button {
+    border: 0;
+    background: transparent;
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 11px;
+    padding: 5px 13px;
+    border-radius: 999px;
+    cursor: pointer;
+  }
+  .zoom-pill button[aria-pressed="true"] { background: var(--text); color: #101418; }
+
+  .tabs {
+    display: flex;
+    gap: 4px;
+    overflow-x: auto;
+    scrollbar-width: none;
+    max-width: 100%;
+  }
+  .tabs::-webkit-scrollbar { display: none; }
+  .tabs button {
+    border: 0;
+    background: transparent;
+    color: rgba(255, 255, 255, 0.62);
+    font-family: var(--font);
+    font-size: 11.5px;
+    font-weight: 600;
+    letter-spacing: 0.09em;
+    padding: 7px 10px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: color 0.15s ease;
+  }
+  .tabs button[aria-selected="true"] { color: var(--amber); }
+
+  .shutter-row {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 74px;
+  }
+
+  .thumb {
+    position: absolute;
+    left: 0;
+    width: 46px;
+    height: 46px;
+    border-radius: 9px;
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    background: var(--surface-2);
+    background-size: cover;
+    background-position: center;
+    cursor: pointer;
+    overflow: hidden;
+  }
+  .thumb.empty::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: repeating-linear-gradient(45deg, rgba(255,255,255,0.05) 0 4px, transparent 4px 8px);
+  }
+
+  .shutter {
+    width: 70px;
+    height: 70px;
+    border-radius: 50%;
+    background: #fff;
+    border: 4px solid rgba(255, 255, 255, 0.45);
+    cursor: pointer;
+    transition: transform 0.1s ease, border-color 0.2s ease;
+  }
+  .shutter:active { transform: scale(0.93); }
+  .shutter.busy { border-color: var(--amber); }
+
+  .shutter-row .icon-btn { position: absolute; right: 0; }
+
+  /* ---------------------------------------------------------------- overlays */
+
+  .grid {
+    position: absolute;
+    inset: 0;
+    z-index: 3;
+    pointer-events: none;
+    display: none;
+  }
+  .grid.on { display: block; }
+  .grid span {
+    position: absolute;
+    background: rgba(255, 255, 255, 0.22);
+  }
+  .grid span.v { top: 0; bottom: 0; width: 1px; }
+  .grid span.h { left: 0; right: 0; height: 1px; }
+
+  .reticle {
+    position: absolute;
+    z-index: 3;
+    width: 46px;
+    height: 46px;
+    margin: -23px 0 0 -23px;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    left: 50%;
+    top: 50%;
+  }
+  .reticle.show { opacity: 1; }
+  .reticle::before, .reticle::after {
+    content: "";
+    position: absolute;
+    background: var(--amber);
+  }
+  .reticle::before { left: 50%; top: 0; bottom: 0; width: 1.5px; transform: translateX(-50%); }
+  .reticle::after { top: 50%; left: 0; right: 0; height: 1.5px; transform: translateY(-50%); }
+
+  .status {
+    position: absolute;
+    z-index: 4;
+    top: 68px;
+    left: 0;
+    right: 0;
+    text-align: center;
+    font-family: var(--mono);
+    font-size: 10.5px;
+    letter-spacing: 0.06em;
+    color: rgba(255, 255, 255, 0.72);
+    pointer-events: none;
+  }
+
+  /* ---------------------------------------------------------------- sheet */
+
+  .sheet {
+    position: absolute;
+    inset: 0;
+    z-index: 10;
+    background: rgba(8, 10, 12, 0.55);
+    backdrop-filter: blur(2px);
+    display: none;
+    align-items: flex-end;
+  }
+  .sheet.open { display: flex; }
+
+  .sheet-panel {
+    width: 100%;
+    max-height: 82%;
+    overflow-y: auto;
+    background: var(--surface);
+    border-top: 1px solid var(--line);
+    border-radius: 24px 24px 0 0;
+    padding: 10px 18px 24px;
+    animation: rise 0.22s ease-out;
+  }
+  @keyframes rise { from { transform: translateY(18px); opacity: 0.6; } to { transform: none; opacity: 1; } }
+
+  .grabber {
+    width: 38px;
+    height: 4px;
+    border-radius: 99px;
+    background: #3b4248;
+    margin: 2px auto 14px;
+  }
+
+  .sheet h2 {
+    font-size: 20px;
+    margin: 0 0 14px;
+    font-weight: 600;
+  }
+
+  .row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 12px 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  }
+  .row:last-of-type { border-bottom: 0; }
+  .row .label { font-size: 13.5px; }
+  .row .sub { font-size: 11px; color: var(--dim); margin-top: 2px; max-width: 210px; }
+
+  .seg {
+    display: flex;
+    gap: 4px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+  .seg button {
+    border: 1px solid transparent;
+    background: var(--surface-2);
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 11px;
+    padding: 6px 10px;
+    border-radius: 8px;
+    cursor: pointer;
+  }
+  .seg button[aria-pressed="true"] { background: var(--amber); color: #101418; font-weight: 700; }
+
+  .switch {
+    position: relative;
+    width: 42px;
+    height: 24px;
+    border-radius: 99px;
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    cursor: pointer;
+    flex: 0 0 auto;
+  }
+  .switch::after {
+    content: "";
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--dim);
+    transition: transform 0.16s ease, background 0.16s ease;
+  }
+  .switch[aria-checked="true"] { background: var(--amber-dim); border-color: rgba(255, 176, 32, 0.4); }
+  .switch[aria-checked="true"]::after { transform: translateX(18px); background: var(--amber); }
+
+  .close-sheet {
+    width: 100%;
+    margin-top: 16px;
+    padding: 12px;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+    background: transparent;
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 13px;
+    cursor: pointer;
+  }
+
+  /* ---------------------------------------------------------------- toast */
+
+  .toast {
+    position: absolute;
+    z-index: 12;
+    left: 50%;
+    bottom: 96px;
+    transform: translate(-50%, 8px);
+    background: rgba(10, 12, 14, 0.92);
+    border: 1px solid var(--line);
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 11px;
+    padding: 8px 14px;
+    border-radius: 999px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease, transform 0.2s ease;
+    white-space: nowrap;
+  }
+  .toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+  /* ---------------------------------------------------------------- notes */
+
+  .notes {
+    width: 300px;
+    max-height: calc(100vh - 48px);
+    overflow-y: auto;
+    padding-right: 6px;
+  }
+  .notes .eyebrow {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--amber);
+    margin-bottom: 10px;
+  }
+  .notes h1 {
+    font-size: 26px;
+    line-height: 1.15;
+    margin: 0 0 8px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+  .notes p {
+    font-size: 13px;
+    line-height: 1.55;
+    color: var(--dim);
+    margin: 0 0 16px;
+  }
+  .notes h3 {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--dim);
+    margin: 20px 0 8px;
+    font-weight: 400;
+  }
+  .notes ul { margin: 0; padding-left: 16px; }
+  .notes li { font-size: 12.5px; line-height: 1.5; color: var(--text); margin-bottom: 7px; }
+  .notes li span { color: var(--dim); }
+  .caps {
+    font-family: var(--mono);
+    font-size: 11px;
+    line-height: 1.7;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 12px;
+    color: var(--dim);
+    white-space: pre-wrap;
+  }
+
+  @media (max-width: 860px) {
+    body { flex-direction: column; gap: 18px; padding: 0; }
+    .stage { width: 100vw; max-height: none; height: 100vh; border-radius: 0; border: 0; aspect-ratio: auto; }
+    .notes { display: none; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { animation: none !important; transition: none !important; }
+  }
+</style>
+</head>
+<body>
+
+<main class="stage" id="stage">
+  <video id="preview" autoplay playsinline muted></video>
+  <div class="scrim top"></div>
+  <div class="scrim bottom"></div>
+
+  <div class="grid" id="grid">
+    <span class="v" style="left: 33.33%"></span>
+    <span class="v" style="left: 66.66%"></span>
+    <span class="h" style="top: 33.33%"></span>
+    <span class="h" style="top: 66.66%"></span>
+  </div>
+
+  <div class="reticle" id="reticle"></div>
+  <div class="status" id="status">starting camera…</div>
+
+  <header class="top">
+    <button class="icon-btn" id="torch" title="Torch">
+      <svg viewBox="0 0 24 24"><path d="M13 2 6 13h5l-1 9 8-12h-5l1-8z"/></svg>
+    </button>
+    <button class="icon-btn" id="menu" title="Settings">
+      <svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+    </button>
+  </header>
+
+  <div class="quick">
+    <div class="zoom-pill" id="zoom">
+      <button data-zoom="1" aria-pressed="true">1x</button>
+      <button data-zoom="2" aria-pressed="false">2x</button>
+    </div>
+    <button class="icon-btn" id="gridBtn" title="Grid">
+      <svg viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="17" height="17" rx="2"/><path d="M9.2 3.5v17M14.8 3.5v17M3.5 9.2h17M3.5 14.8h17"/></svg>
+    </button>
+  </div>
+
+  <footer class="bottom">
+    <div class="tabs" id="tabs">
+      <button data-mode="photo" aria-selected="true">PHOTO</button>
+      <button data-mode="night" aria-selected="false">NIGHT</button>
+      <button data-mode="burst" aria-selected="false">BURST</button>
+    </div>
+    <div class="shutter-row">
+      <div class="thumb empty" id="thumb" title="Last shot"></div>
+      <button class="shutter" id="shutter" aria-label="Take photo"></button>
+      <button class="icon-btn" id="flip" title="Switch camera">
+        <svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 0 1-13.7 5.6"/><path d="M4 12a8 8 0 0 1 13.7-5.6"/><path d="M17 3v4h-4M7 21v-4h4"/></svg>
+      </button>
+    </div>
+  </footer>
+
+  <div class="toast" id="toast"></div>
+
+  <div class="sheet" id="sheet">
+    <div class="sheet-panel">
+      <div class="grabber"></div>
+      <h2>Camera settings</h2>
+
+      <div class="row">
+        <div><div class="label">Night frames</div><div class="sub">More frames means less noise and a longer hold</div></div>
+        <div class="seg" id="nightFrames">
+          <button data-frames="4" aria-pressed="false">4</button>
+          <button data-frames="8" aria-pressed="true">8</button>
+          <button data-frames="16" aria-pressed="false">16</button>
+        </div>
+      </div>
+
+      <div class="row">
+        <div><div class="label">JPEG quality</div><div class="sub">Applied when the frame is encoded</div></div>
+        <div class="seg" id="quality">
+          <button data-q="0.85" aria-pressed="false">85</button>
+          <button data-q="0.93" aria-pressed="true">93</button>
+          <button data-q="1" aria-pressed="false">100</button>
+        </div>
+      </div>
+
+      <div class="row">
+        <div><div class="label">Timer</div><div class="sub">Countdown before the shutter fires</div></div>
+        <div class="seg" id="timer">
+          <button data-timer="0" aria-pressed="true">Off</button>
+          <button data-timer="3" aria-pressed="false">3s</button>
+          <button data-timer="10" aria-pressed="false">10s</button>
+        </div>
+      </div>
+
+      <div class="row">
+        <div><div class="label">Mirror selfies</div><div class="sub">Save the front camera as the preview shows it</div></div>
+        <div class="switch" id="mirror" role="switch" aria-checked="true"></div>
+      </div>
+
+      <div class="row">
+        <div><div class="label">Grid</div><div class="sub">Rule-of-thirds guides</div></div>
+        <div class="switch" id="gridSwitch" role="switch" aria-checked="false"></div>
+      </div>
+
+      <div class="row">
+        <div><div class="label">Exposure compensation</div><div class="sub" id="evSub">Where the browser allows it</div></div>
+        <div class="seg" id="ev">
+          <button data-ev="-1" aria-pressed="false">−1</button>
+          <button data-ev="0" aria-pressed="true">0</button>
+          <button data-ev="1" aria-pressed="false">+1</button>
+        </div>
+      </div>
+
+      <button class="close-sheet" id="closeSheet">Done</button>
+    </div>
+  </div>
+</main>
+
+<aside class="notes">
+  <div class="eyebrow">Nijatva · web build</div>
+  <h1>The same camera, in a browser tab</h1>
+  <p>
+    This is the Android app rebuilt against the web camera stack. Same layout, same
+    modes where the browser can back them up — and honest gaps where it cannot.
+  </p>
+
+  <h3>What works here</h3>
+  <ul>
+    <li><strong>Night stacking.</strong> Captures N frames and averages them on a canvas. Random noise falls by roughly the square root of N, exactly as in the Android build.</li>
+    <li><strong>Torch, zoom, grid, timer, mirroring.</strong> Torch and optical zoom use media track constraints when the device exposes them; otherwise zoom is a canvas crop.</li>
+    <li><strong>Exposure compensation</strong> through <code>exposureCompensation</code>, where the browser implements it.</li>
+    <li><strong>Burst</strong> writes a short series of frames.</li>
+  </ul>
+
+  <h3>What cannot work</h3>
+  <ul>
+    <li><strong>RAW / DNG.</strong> No browser API exposes sensor data. <span>Android build: yes.</span></li>
+    <li><strong>Manual ISO and shutter speed.</strong> Only exposure compensation is standardised. <span>Android build: yes.</span></li>
+    <li><strong>HDR exposure bracketing.</strong> A browser cannot pin three different shutter speeds. <span>Android build: yes.</span></li>
+    <li><strong>Panorama with gyro.</strong> Needs device orientation at capture time. <span>Android build: yes.</span></li>
+  </ul>
+
+  <h3>Live capabilities</h3>
+  <div class="caps" id="caps">reading camera…</div>
+</aside>
+
+<script>
+(() => {
+  "use strict";
+
+  const $ = (id) => document.getElementById(id);
+  const video = $("preview");
+  const stage = $("stage");
+  const statusEl = $("status");
+  const toastEl = $("toast");
+  const gridEl = $("grid");
+  const reticle = $("reticle");
+  const shutterBtn = $("shutter");
+  const thumbEl = $("thumb");
+
+  const state = {
+    stream: null,
+    track: null,
+    facing: "environment",
+    mode: "photo",
+    zoom: 1,
+    nightFrames: 8,
+    quality: 0.93,
+    timer: 0,
+    mirror: true,
+    grid: false,
+    ev: 0,
+    busy: false,
+    lastBlob: null,
+  };
+
+  const caps = { torch: false, zoom: false, ev: false, width: 0, height: 0 };
+
+  let toastTimer = null;
+  function toast(message) {
+    toastEl.textContent = message;
+    toastEl.classList.add("show");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => toastEl.classList.remove("show"), 1800);
+  }
+
+  function setStatus(text) {
+    statusEl.textContent = text;
+  }
+
+  // ------------------------------------------------------------ camera setup
+
+  async function startCamera(facing = state.facing) {
+    stopCamera();
+    setStatus("starting camera…");
+
+    const constraints = {
+      audio: false,
+      video: {
+        facingMode: { ideal: facing },
+        width: { ideal: 3840 },
+        height: { ideal: 2160 },
+      },
+    };
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      state.stream = stream;
+      state.track = stream.getVideoTracks()[0];
+      video.srcObject = stream;
+      await video.play().catch(() => {});
+      await new Promise((resolve) => {
+        if (video.videoWidth) return resolve();
+        video.addEventListener("loadedmetadata", resolve, { once: true });
+      });
+
+      state.facing = facing;
+      video.classList.toggle("mirrored", facing === "user" && state.mirror);
+      await readCapabilities();
+      setStatus(`${caps.width} × ${caps.height} · ${state.track.label || "camera"}`);
+    } catch (error) {
+      setStatus("camera unavailable — " + (error && error.name ? error.name : "error"));
+      toast("Allow camera access to use this page");
+    }
+  }
+
+  function stopCamera() {
+    if (state.stream) {
+      state.stream.getTracks().forEach((track) => track.stop());
+      state.stream = null;
+      state.track = null;
+    }
+  }
+
+  async function readCapabilities() {
+    const track = state.track;
+    if (!track) return;
+    const settings = track.getSettings ? track.getSettings() : {};
+    const capabilities = track.getCapabilities ? track.getCapabilities() : {};
+
+    caps.width = settings.width || video.videoWidth || 0;
+    caps.height = settings.height || video.videoHeight || 0;
+    caps.torch = Array.isArray(capabilities.torch) ? capabilities.torch.includes(true) : Boolean(capabilities.torch);
+    caps.zoom = capabilities.zoom && typeof capabilities.zoom.max === "number";
+    caps.ev = capabilities.exposureCompensation && typeof capabilities.exposureCompensation.max === "number";
+
+    $("caps").textContent = [
+      "resolution   " + caps.width + " × " + caps.height,
+      "torch        " + (caps.torch ? "available" : "not exposed"),
+      "zoom         " + (caps.zoom ? "native up to " + capabilities.zoom.max + "x" : "canvas crop only"),
+      "exposure     " + (caps.ev ? "compensation available" : "not exposed"),
+      "frames       " + (video.requestVideoFrameCallback ? "per-frame callbacks" : "timer sampling"),
+    ].join("\n");
+
+    $("torch").style.opacity = caps.torch ? "1" : "0.45";
+    $("evSub").textContent = caps.ev ? "Supported by this camera" : "Not exposed by this browser";
+  }
+
+  async function applyConstraints(advanced) {
+    if (!state.track) return false;
+    try {
+      await state.track.applyConstraints({ advanced });
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  // ------------------------------------------------------------ capture core
+
+  function captureCanvas() {
+    const sourceWidth = video.videoWidth || 1280;
+    const sourceHeight = video.videoHeight || 720;
+    const crop = Math.min(state.zoom, 3);
+    const width = Math.round(sourceWidth / crop);
+    const height = Math.round(sourceHeight / crop);
+
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext("2d", { willReadFrequently: true });
+
+    const sx = (sourceWidth - width) / 2;
+    const sy = (sourceHeight - height) / 2;
+
+    if (state.facing === "user" && state.mirror) {
+      context.translate(width, 0);
+      context.scale(-1, 1);
+    }
+    context.drawImage(video, sx, sy, width, height, 0, 0, width, height);
+    context.setTransform(1, 0, 0, 1, 0, 0);
+    return canvas;
+  }
+
+  function nextFrame() {
+    return new Promise((resolve) => {
+      if (video.requestVideoFrameCallback) video.requestVideoFrameCallback(() => resolve());
+      else setTimeout(resolve, 1000 / 30);
+    });
+  }
+
+  /** Average N frames in the pixel domain: the browser's version of night mode. */
+  async function stackFrames(count, onProgress) {
+    const first = captureCanvas();
+    const width = first.width;
+    const height = first.height;
+    const accumulator = new Float32Array(width * height * 3);
+    const scratch = document.createElement("canvas");
+    scratch.width = width;
+    scratch.height = height;
+    const context = scratch.getContext("2d", { willReadFrequently: true });
+
+    for (let index = 0; index < count; index++) {
+      context.drawImage(video, 0, 0, video.videoWidth, video.videoHeight, 0, 0, width, height);
+      const data = context.getImageData(0, 0, width, height).data;
+      for (let p = 0, a = 0; p < data.length; p += 4, a += 3) {
+        accumulator[a] += data[p];
+        accumulator[a + 1] += data[p + 1];
+        accumulator[a + 2] += data[p + 2];
+      }
+      if (onProgress) onProgress(index + 1, count);
+      await nextFrame();
+    }
+
+    const out = document.createElement("canvas");
+    out.width = width;
+    out.height = height;
+    const outContext = out.getContext("2d");
+    const image = outContext.createImageData(width, height);
+    const inverse = 1 / count;
+
+    for (let p = 0, a = 0; p < image.data.length; p += 4, a += 3) {
+      // A gentle lift after averaging: stacked frames read slightly flat.
+      image.data[p] = Math.min(255, accumulator[a] * inverse * 1.06);
+      image.data[p + 1] = Math.min(255, accumulator[a + 1] * inverse * 1.06);
+      image.data[p + 2] = Math.min(255, accumulator[a + 2] * inverse * 1.06);
+      image.data[p + 3] = 255;
+    }
+    outContext.putImageData(image, 0, 0);
+    return out;
+  }
+
+  function encode(canvas) {
+    return new Promise((resolve) => {
+      canvas.toBlob((blob) => resolve(blob), "image/jpeg", state.quality);
+    });
+  }
+
+  function saveBlob(blob, prefix = "NIJ") {
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${prefix}_${stamp}.jpg`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+  }
+
+  function showThumb(blob) {
+    if (!blob) return;
+    state.lastBlob = blob;
+    const url = URL.createObjectURL(blob);
+    thumbEl.style.backgroundImage = `url(${url})`;
+    thumbEl.classList.remove("empty");
+  }
+
+  // ------------------------------------------------------------ shooting
+
+  async function shoot() {
+    if (state.busy || !state.stream) return;
+    state.busy = true;
+    shutterBtn.classList.add("busy");
+
+    try {
+      if (state.timer > 0) {
+        for (let left = state.timer; left > 0; left--) {
+          setStatus("timer · " + left);
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+        }
+      }
+
+      if (state.mode === "night") {
+        setStatus("stacking · 0/" + state.nightFrames);
+        const stacked = await stackFrames(state.nightFrames, (done, total) => {
+          setStatus(`stacking · ${done}/${total}`);
+        });
+        const blob = await encode(stacked);
+        showThumb(blob);
+        saveBlob(blob, "NIGHT");
+        setStatus(`night · ${state.nightFrames} frames averaged`);
+      } else if (state.mode === "burst") {
+        const shots = 5;
+        for (let index = 0; index < shots; index++) {
+          const canvas = captureCanvas();
+          const blob = await encode(canvas);
+          showThumb(blob);
+          saveBlob(blob, "BURST");
+          setStatus(`burst · ${index + 1}/${shots}`);
+          await nextFrame();
+        }
+      } else {
+        const canvas = captureCanvas();
+        const blob = await encode(canvas);
+        showThumb(blob);
+        saveBlob(blob, "IMG");
+        setStatus(`photo · ${canvas.width} × ${canvas.height}`);
+      }
+    } catch (error) {
+      setStatus("capture failed");
+      toast(String(error && error.message ? error.message : error));
+    } finally {
+      state.busy = false;
+      shutterBtn.classList.remove("busy");
+    }
+  }
+
+  // ------------------------------------------------------------ ui wiring
+
+  function selectMode(mode) {
+    state.mode = mode;
+    document.querySelectorAll("#tabs button").forEach((button) => {
+      button.setAttribute("aria-selected", String(button.dataset.mode === mode));
+    });
+    if (mode === "night") toast("Hold still — frames are being averaged");
+  }
+
+  document.querySelectorAll("#tabs button").forEach((button) => {
+    button.addEventListener("click", () => selectMode(button.dataset.mode));
+  });
+
+  document.querySelectorAll("#zoom button").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const factor = Number(button.dataset.zoom);
+      state.zoom = factor;
+      document.querySelectorAll("#zoom button").forEach((other) => {
+        other.setAttribute("aria-pressed", String(other === button));
+      });
+      const applied = await applyConstraints([{ zoom: factor }]);
+      if (!applied) toast("Native zoom unavailable — cropping instead");
+    });
+  });
+
+  $("torch").addEventListener("click", async () => {
+    const on = $("torch").classList.toggle("active");
+    const applied = await applyConstraints([{ torch: on }]);
+    if (!applied) {
+      $("torch").classList.remove("active");
+      toast("This camera does not expose the torch");
+    }
+  });
+
+  $("gridBtn").addEventListener("click", () => {
+    state.grid = !state.grid;
+    gridEl.classList.toggle("on", state.grid);
+    $("gridBtn").classList.toggle("active", state.grid);
+    $("gridSwitch").setAttribute("aria-checked", String(state.grid));
+  });
+
+  $("flip").addEventListener("click", () => {
+    startCamera(state.facing === "environment" ? "user" : "environment");
+  });
+
+  shutterBtn.addEventListener("click", shoot);
+  thumbEl.addEventListener("click", () => {
+    if (state.lastBlob) saveBlob(state.lastBlob, "IMG");
+    else toast("Nothing captured yet");
+  });
+
+  video.addEventListener("pointerdown", (event) => {
+    const box = stage.getBoundingClientRect();
+    reticle.style.left = ((event.clientX - box.left) / box.width) * 100 + "%";
+    reticle.style.top = ((event.clientY - box.top) / box.height) * 100 + "%";
+    reticle.classList.add("show");
+    clearTimeout(reticle.hideTimer);
+    reticle.hideTimer = setTimeout(() => reticle.classList.remove("show"), 900);
+  });
+
+  const sheet = $("sheet");
+  $("menu").addEventListener("click", () => sheet.classList.add("open"));
+  $("closeSheet").addEventListener("click", () => sheet.classList.remove("open"));
+  sheet.addEventListener("click", (event) => {
+    if (event.target === sheet) sheet.classList.remove("open");
+  });
+
+  function bindSeg(containerId, attribute, apply) {
+    document.querySelectorAll(`#${containerId} button`).forEach((button) => {
+      button.addEventListener("click", () => {
+        document.querySelectorAll(`#${containerId} button`).forEach((other) => {
+          other.setAttribute("aria-pressed", String(other === button));
+        });
+        apply(button.dataset[attribute]);
+      });
+    });
+  }
+
+  bindSeg("nightFrames", "frames", (value) => { state.nightFrames = Number(value); });
+  bindSeg("quality", "q", (value) => { state.quality = Number(value); });
+  bindSeg("timer", "timer", (value) => { state.timer = Number(value); });
+  bindSeg("ev", "ev", async (value) => {
+    state.ev = Number(value);
+    const applied = await applyConstraints([{ exposureCompensation: state.ev }]);
+    if (!applied) toast("Exposure compensation not available here");
+  });
+
+  $("mirror").addEventListener("click", () => {
+    state.mirror = !state.mirror;
+    $("mirror").setAttribute("aria-checked", String(state.mirror));
+    video.classList.toggle("mirrored", state.facing === "user" && state.mirror);
+  });
+
+  $("gridSwitch").addEventListener("click", () => {
+    state.grid = !state.grid;
+    $("gridSwitch").setAttribute("aria-checked", String(state.grid));
+    gridEl.classList.toggle("on", state.grid);
+    $("gridBtn").classList.toggle("active", state.grid);
+  });
+
+  document.addEventListener("keydown", (event) => {
+    if (event.code === "Space") {
+      event.preventDefault();
+      shoot();
+    }
+    if (event.key === "Escape") sheet.classList.remove("open");
+  });
+
+  window.addEventListener("pagehide", stopCamera);
+
+  startCamera();
+})();
+</script>
+</body>
+</html>
