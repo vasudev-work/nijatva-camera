@@ -136,6 +136,11 @@ Known gaps, in the order they will bite:
 
 ## Licence
 
-Your code, your call. If any of this ends up in a GPL project, note that the
-exposure-fusion and stacking implementations here are independent of any GPL
-source.
+Apache 2.0 - see `LICENSE`. The exposure-fusion and stacking implementations are
+original work, not derived from any GPL source.
+
+## Roadmap
+
+`docs/ROADMAP.md` maps the usual GCam feature list onto what this phone can
+actually do, in four tiers: already done, feasible next, expensive, and
+impossible on this hardware - with the numbers behind each call.
