@@ -105,13 +105,15 @@ If you run this on a different phone, open the Info dialog first and read the
 level. Then adjust `NIGHT_MAX_PIXELS` and `NIGHT_FRAMES` in `CameraEngine.kt` to
 match the RAM you have.
 
-## Honest status
+## Status
 
-The code has not been compiled in the environment it was written in, because that
-environment has no Android SDK. It is written against the documented Camera2 API
-and the project structure is complete, but treat the first build as a debugging
-session: expect missing imports or a deprecated-API warning to fix, not a
-finished app. The capture logic and the maths are the parts worth keeping.
+It compiles. `app-debug.apk` is 7.6 MB, package `com.nijatva.camera`, minSdk 29,
+targetSdk 35, signed with the debug key.
+
+It has not been run on a phone yet. The camera paths - session setup, capture,
+fusion, stitching - are untested on hardware, so treat the first launch as a
+smoke test: open the Info dialog, read the hardware level, then try one mode at a
+time and watch for a black preview or a crash on shutter.
 
 Known gaps, in the order they will bite:
 
