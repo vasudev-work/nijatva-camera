@@ -1,2 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources />
+<resources>
+    <!-- Mode strip and modes grid -->
+    <string name="mode_photo">PHOTO</string>
+    <string name="mode_video">VIDEO</string>
+    <string name="mode_night">NIGHT</string>
+    <string name="mode_pro">PRO</string>
+    <string name="mode_astro">ASTRO</string>
+    <string name="mode_hdr">HDR</string>
+    <string name="mode_panorama">PANORAMA</string>
+    <string name="mode_raw">RAW</string>
+    <string name="mode_more">MORE</string>
+    <string name="modes_grid_title">MORE MODES</string>
+    <string name="action_close">CLOSE</string>
+    <string name="zoom_one">1x</string>
+    <string name="zoom_two">2x</string>
+    <string name="stop_recording_first">Stop recording first</string>
+    <string name="status_recording">REC %1$s</string>
+</resources>

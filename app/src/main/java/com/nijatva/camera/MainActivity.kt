@@ -67,7 +67,12 @@ class MainActivity : AppCompatActivity(), CameraEngine.Callback {
     private lateinit var gridOverlay: GridOverlay
     private lateinit var statusStrip: StatusStrip
     private lateinit var statusText: TextView
-    private lateinit var modeBar: LinearLayout
+    private lateinit var modeStrip: com.nijatva.camera.ui.ModeStrip
+    private lateinit var zoomPill: com.nijatva.camera.ui.ZoomPill
+    private lateinit var modesGrid: com.nijatva.camera.ui.ModesGrid
+    private lateinit var controls: LinearLayout
+    private lateinit var rightHost: FrameLayout
+    private lateinit var flipButton: IconButton
     private lateinit var proPanel: ProPanel
     private lateinit var topBar: LinearLayout
     private lateinit var bottomBar: LinearLayout
@@ -77,19 +82,18 @@ class MainActivity : AppCompatActivity(), CameraEngine.Callback {
     private lateinit var menuButton: IconButton
     private lateinit var gridButton: IconButton
     private lateinit var hdrButton: IconButton
-    private val zoomChips = mutableMapOf<Float, TextView>()
     private var currentMode: Mode = Mode.PHOTO
 
     /**
      * Lite keeps the three modes that earn their place on a mid-range sensor:
-     * a plain shot, a stacked night shot, and manual control. Panorama and RAW
-     * are still in the engine, just not offered.
+     * a plain shot, a stacked night shot, and manual control. Panorama, video,
+     * astro and RAW are still in the engine, just not offered. The rule itself
+     * lives in Modes, so it can be unit tested.
      */
-    private val availableModes: List<Mode> =
-        if (BuildConfig.LITE) listOf(Mode.PHOTO, Mode.NIGHT, Mode.PRO) else Mode.values().toList()
+    private val stripModes: List<Mode> = com.nijatva.camera.camera.Modes.stripModes(BuildConfig.LITE)
+    private val gridModes: List<Mode> = com.nijatva.camera.camera.Modes.gridModes(BuildConfig.LITE)
     private var settings = Settings()
 
-    private val modeChips = mutableMapOf<Mode, TextView>()
     private var caps: DeviceCapabilities? = null
 
     private val panoTicker = Handler(Looper.getMainLooper())
@@ -149,6 +153,15 @@ class MainActivity : AppCompatActivity(), CameraEngine.Callback {
     override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
         super.onConfigurationChanged(newConfig)
         engine.setDeviceRotation(currentRotationDegrees())
+        // The activity is not recreated on rotation, so the chrome is rearranged
+        // by hand and the grid rebuilt for the new column count.
+        applyOrientation()
+        modesGrid.bind(
+            modes = gridModes,
+            stripModes = stripModes,
+            columns = if (isTablet()) 4 else 3,
+        )
+        modesGrid.setSelected(currentMode)
     }
 
     /** Display rotation in degrees, which is what Camera2 expects for JPEG orientation. */
@@ -244,6 +257,7 @@ class MainActivity : AppCompatActivity(), CameraEngine.Callback {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(10), dp(6), dp(10), dp(6))
+            minimumHeight = dp(56)
         }
         flashButton = IconButton(this).apply {
             kind = IconButton.Kind.FLASH_OFF
@@ -280,16 +294,22 @@ class MainActivity : AppCompatActivity(), CameraEngine.Callback {
         }
         bottomBar.addView(statusText)
 
-        // zoom pill and the two quick toggles, sitting above the mode row
-        val quickRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(0, 0, 0, dp(8))
+        // ---- zoom pill (only when the device really has more than one step)
+        zoomPill = com.nijatva.camera.ui.ZoomPill(this).apply {
+            onZoom = { factor ->
+                engine.updateSettings { it.copy(zoom = factor) }
+            }
+            visibility = View.GONE
         }
-        quickRow.addView(View(this), LinearLayout.LayoutParams(0, dp(1), 1f))
-        quickRow.addView(zoomPill())
-        quickRow.addView(View(this), LinearLayout.LayoutParams(0, dp(1), 1f))
+        zoomPill.bind(listOf(1f, 2f), 1f)
 
+        val quickRow = FrameLayout(this).apply { setPadding(0, 0, 0, dp(6)) }
+        quickRow.addView(zoomPill, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER
+        ))
+
+        // Grid and HDR sit against the right edge above the strip, the way the
+        // reference puts its utility buttons.
         gridButton = IconButton(this).apply {
             kind = IconButton.Kind.GRID
             setOnClickListener { cycleGrid() }
@@ -298,47 +318,87 @@ class MainActivity : AppCompatActivity(), CameraEngine.Callback {
             kind = IconButton.Kind.HDR
             setOnClickListener { cycleHdr() }
         }
-        quickRow.addView(gridButton)
-        if (BuildConfig.LITE) hdrButton.visibility = View.GONE
-        quickRow.addView(hdrButton, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT
-        ).apply { leftMargin = dp(6) })
+        val utilities = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.END
+        }
+        utilities.addView(gridButton, LinearLayout.LayoutParams(dp(40), dp(40)))
+        if (!BuildConfig.LITE) {
+            utilities.addView(hdrButton, LinearLayout.LayoutParams(dp(40), dp(40)).apply { topMargin = dp(6) })
+        }
+        quickRow.addView(utilities, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+            Gravity.END or Gravity.BOTTOM
+        ).apply { rightMargin = dp(2) })
         bottomBar.addView(quickRow)
 
-        modeBar = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER
-            setPadding(dp(4), 0, dp(4), dp(6))
+        // ---- mode strip
+        modeStrip = com.nijatva.camera.ui.ModeStrip(this).apply {
+            onModeSelected = { mode -> selectMode(mode) }
+            onMore = { openModesGrid() }
         }
-        availableModes.forEach { mode ->
-            val tab = modeTab(mode)
-            modeChips[mode] = tab
-            modeBar.addView(tab)
-        }
-        bottomBar.addView(HorizontalScrollView(this).apply {
-            isHorizontalScrollBarEnabled = false
-            addView(modeBar)
-        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
-
-        val shutterRow = FrameLayout(this).apply { minimumHeight = dp(76) }
-        shutterRow.addView(thumbnail(), FrameLayout.LayoutParams(
-            dp(48), dp(48), Gravity.START or Gravity.CENTER_VERTICAL
-        ).apply { leftMargin = dp(12) })
-        shutterRow.addView(shutterButton(), FrameLayout.LayoutParams(
-            dp(72), dp(72), Gravity.CENTER
+        modeStrip.bind(stripModes)
+        bottomBar.addView(modeStrip, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
         ))
-        shutterRow.addView(IconButton(this).apply {
+
+        // ---- bottom control row: thumbnail, shutter, flip
+        controls = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        controls.addView(thumbnail(), LinearLayout.LayoutParams(dp(56), dp(56)).apply { leftMargin = dp(16) })
+        controls.addView(View(this), LinearLayout.LayoutParams(0, dp(1), 1f))
+
+        val shutter = FrameLayout(this)
+        shutter.addView(View(this).apply {
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(Color.TRANSPARENT)
+                setStroke(dp(2), Color.argb(190, 255, 255, 255))
+            }
+            isClickable = false
+        }, FrameLayout.LayoutParams(dp(92), dp(92), Gravity.CENTER))
+        shutter.addView(shutterButton(), FrameLayout.LayoutParams(
+            dp(74), dp(74), Gravity.CENTER
+        ))
+        controls.addView(shutter, LinearLayout.LayoutParams(dp(92), dp(92)))
+
+        controls.addView(View(this), LinearLayout.LayoutParams(0, dp(1), 1f))
+        flipButton = IconButton(this).apply {
             kind = IconButton.Kind.FLIP
             setOnClickListener { engine.switchCamera() }
-        }, FrameLayout.LayoutParams(
-            dp(44), dp(44), Gravity.END or Gravity.CENTER_VERTICAL
-        ).apply { rightMargin = dp(14) })
-        bottomBar.addView(shutterRow, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+        }
+        controls.addView(flipButton, LinearLayout.LayoutParams(dp(56), dp(56)).apply { rightMargin = dp(16) })
+        bottomBar.addView(controls, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, dp(96)
         ))
 
         root.addView(bottomBar, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM
+        ))
+
+        // Landscape puts the control row on the right edge; the host stays empty
+        // in portrait.
+        rightHost = FrameLayout(this)
+        root.addView(rightHost, FrameLayout.LayoutParams(
+            dp(96), ViewGroup.LayoutParams.MATCH_PARENT, Gravity.END or Gravity.CENTER_VERTICAL
+        ))
+
+        modesGrid = com.nijatva.camera.ui.ModesGrid(this).apply {
+            onModeSelected = { mode ->
+                selectMode(mode)
+                closeModesGrid()
+            }
+            onMoreTapped = { closeModesGrid() }
+        }
+        modesGrid.bind(
+            modes = gridModes,
+            stripModes = stripModes,
+            columns = if (isTablet()) 4 else 3,
+        )
+        root.addView(modesGrid, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
         ))
 
         proPanel = ProPanel(this).apply {
@@ -377,12 +437,13 @@ class MainActivity : AppCompatActivity(), CameraEngine.Callback {
 
         setContentView(root)
         applyInsets(root)
+        applyOrientation()
 
         val scaleDetector = ScaleGestureDetector(this, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
             override fun onScale(detector: ScaleGestureDetector): Boolean {
                 val next = (engine.currentSettings.zoom * detector.scaleFactor).coerceIn(1f, 8f)
                 engine.updateSettings { it.copy(zoom = next) }
-                updateZoomChips(next)
+                zoomPill.select(if (next >= 1.6f) 2f else 1f)
                 return true
             }
         })
@@ -414,60 +475,6 @@ class MainActivity : AppCompatActivity(), CameraEngine.Callback {
         ViewCompat.requestApplyInsets(root)
     }
 
-    /** Mode selector as plain uppercase text, the way the stock camera shows it. */
-    private fun modeTab(mode: Mode): TextView = TextView(this).apply {
-        text = mode.label.uppercase()
-        setTextColor(Color.WHITE)
-        setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
-        letterSpacing = 0.08f
-        gravity = Gravity.CENTER
-        setPadding(dp(10), dp(8), dp(10), dp(8))
-        setOnClickListener { selectMode(mode) }
-    }
-
-    private fun zoomPill(): View {
-        val pill = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER
-            background = GradientDrawable().apply {
-                cornerRadius = dp(18).toFloat()
-                setColor(Color.argb(70, 0, 0, 0))
-            }
-            setPadding(dp(4), dp(3), dp(4), dp(3))
-        }
-        listOf(1f, 2f).forEach { factor ->
-            val chip = TextView(this).apply {
-                text = if (factor == 1f) "1x" else "2x"
-                setTextColor(if (factor == 1f) Color.parseColor("#101418") else Color.WHITE)
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
-                gravity = Gravity.CENTER
-                background = GradientDrawable().apply {
-                    cornerRadius = dp(14).toFloat()
-                    setColor(if (factor == 1f) Color.WHITE else Color.TRANSPARENT)
-                }
-                setPadding(dp(12), dp(4), dp(12), dp(4))
-                setOnClickListener {
-                    engine.updateSettings { it.copy(zoom = factor) }
-                    updateZoomChips(factor)
-                }
-            }
-            zoomChips[factor] = chip
-            pill.addView(chip)
-        }
-        return pill
-    }
-
-    private fun updateZoomChips(zoom: Float) {
-        val selected = if (zoom >= 1.6f) 2f else 1f
-        zoomChips.forEach { (factor, chip) ->
-            val chosen = factor == selected
-            chip.setTextColor(if (chosen) Color.parseColor("#101418") else Color.WHITE)
-            chip.background = GradientDrawable().apply {
-                cornerRadius = dp(14).toFloat()
-                setColor(if (chosen) Color.WHITE else Color.TRANSPARENT)
-            }
-        }
-    }
 
     /** Last-shot thumbnail. Shows the real photo after each save; tap opens it in the gallery. */
     private fun thumbnail(): View = android.widget.ImageView(this).apply {
@@ -564,18 +571,20 @@ class MainActivity : AppCompatActivity(), CameraEngine.Callback {
     }
 
     private fun selectMode(mode: Mode) {
-        if (mode !in availableModes) return
+        if (mode !in gridModes) return
+        // A live take owns the session; switching mode would tear it down mid-file.
+        if (engine.recording && mode != currentMode) {
+            Toast.makeText(this, getString(R.string.stop_recording_first), Toast.LENGTH_SHORT).show()
+            return
+        }
         if (panoActive && mode != Mode.PANORAMA) stopPanorama()
         currentMode = mode
 
         engine.setMode(mode)
         proPanel.visibility = if (mode == Mode.PRO) View.VISIBLE else View.GONE
 
-        modeChips.forEach { (chipMode, chip) ->
-            val chosen = chipMode == mode
-            chip.setTextColor(if (chosen) Color.parseColor("#FFB020") else Color.WHITE)
-            chip.alpha = if (chosen) 1f else 0.75f
-        }
+        modeStrip.setSelected(mode)
+        modesGrid.setSelected(mode)
         statusStrip.visibility = if (mode == Mode.PRO) View.VISIBLE else View.GONE
         // Analysis only runs in Photo and Pro, so hide its overlays in other modes.
         if (mode != Mode.PHOTO && mode != Mode.PRO) {
@@ -642,6 +651,57 @@ class MainActivity : AppCompatActivity(), CameraEngine.Callback {
     }
 
     // ---------------------------------------------------------------- misc
+
+    /** Opens the MORE grid over the running preview. */
+    private fun openModesGrid() {
+        modeStrip.setMoreHighlighted(true)
+        modesGrid.setSelected(currentMode)
+        modesGrid.open()
+    }
+
+    private fun closeModesGrid() {
+        modesGrid.close()
+        modeStrip.setMoreHighlighted(false)
+    }
+
+    /** Tablets and foldables get a fourth column in the grid. */
+    private fun isTablet(): Boolean =
+        resources.configuration.smallestScreenWidthDp >= 600
+
+    private fun updateZoomPill() {
+        val supported = caps?.supportsZoom == true
+        zoomPill.visibility = if (supported) View.VISIBLE else View.GONE
+    }
+
+    /**
+     * Moves the control row between the bottom of the screen and the right edge.
+     *
+     * The manifest handles orientation changes without recreating the activity, so
+     * the same views are reparented instead of rebuilt: the camera session, the
+     * preview surface and the engine all keep running through a rotation.
+     */
+    private fun applyOrientation() {
+        val landscape = resources.configuration.orientation ==
+            android.content.res.Configuration.ORIENTATION_LANDSCAPE
+
+        (controls.parent as? ViewGroup)?.removeView(controls)
+
+        if (landscape) {
+            controls.orientation = LinearLayout.VERTICAL
+            rightHost.removeAllViews()
+            rightHost.addView(controls, FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
+            ))
+            bottomBar.setPadding(dp(10), dp(6), dp(96), dp(10))
+        } else {
+            controls.orientation = LinearLayout.HORIZONTAL
+            rightHost.removeAllViews()
+            bottomBar.addView(controls, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(96)
+            ))
+            bottomBar.setPadding(dp(10), dp(6), dp(10), dp(12))
+        }
+    }
 
     private fun openSettings() {
         SettingsSheet(this, settings, onPresets = { showPresets() }) { updated ->
@@ -955,6 +1015,7 @@ class MainActivity : AppCompatActivity(), CameraEngine.Callback {
             )
         }
         statusText.text = "${caps.levelName} · RAW ${if (caps.supportsRaw) "yes" else "no"}"
+        updateZoomPill()
     }
 
     override fun onMetrics(sensitivity: Int, exposureNs: Long, afState: Int) = runOnUiThread {

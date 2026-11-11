@@ -37,6 +37,7 @@ class DeviceCapabilities(
     val exposureRange: Range<Long>?,
     val focalLength: Float,
     val aperture: Float,
+    val maxDigitalZoom: Float = 1f,
 ) {
     val levelName: String = when (hardwareLevel) {
         CameraMetadata.INFO_SUPPORTED_HARDWARE_LEVEL_LEGACY -> "LEGACY"
@@ -46,6 +47,15 @@ class DeviceCapabilities(
         CameraMetadata.INFO_SUPPORTED_HARDWARE_LEVEL_EXTERNAL -> "EXTERNAL"
         else -> "UNKNOWN"
     }
+
+    /**
+     * True when the device advertises a zoom range beyond 1x.
+     *
+     * The zoom pill is only shown for these devices; a phone that reports 1.0 has
+     * nothing to switch between, and a control that does nothing is worse than no
+     * control.
+     */
+    val supportsZoom: Boolean get() = maxDigitalZoom >= 1.5f
 
     /** Manual ISO/shutter control needs FULL or better. */
     val supportsManualControls: Boolean
@@ -146,6 +156,7 @@ class DeviceCapabilities(
                 exposureRange = characteristics.get(CameraCharacteristics.SENSOR_INFO_EXPOSURE_TIME_RANGE),
                 focalLength = characteristics.get(CameraCharacteristics.LENS_INFO_AVAILABLE_FOCAL_LENGTHS)?.firstOrNull() ?: 0f,
                 aperture = characteristics.get(CameraCharacteristics.LENS_INFO_AVAILABLE_APERTURES)?.firstOrNull() ?: 0f,
+                maxDigitalZoom = characteristics.get(CameraCharacteristics.SCALER_AVAILABLE_MAX_DIGITAL_ZOOM) ?: 1f,
             )
         }
     }

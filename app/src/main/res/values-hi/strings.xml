@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="mode_photo">फ़ोटो</string>
+    <string name="mode_video">वीडियो</string>
+    <string name="mode_night">नाइट</string>
+    <string name="mode_pro">प्रो</string>
+    <string name="mode_astro">एस्ट्रो</string>
+    <string name="mode_hdr">एचडीआर</string>
+    <string name="mode_panorama">पैनोरमा</string>
+    <string name="mode_raw">रॉ</string>
+    <string name="mode_more">और</string>
+    <string name="modes_grid_title">और मोड</string>
+    <string name="action_close">बंद करें</string>
+    <string name="zoom_one">1x</string>
+    <string name="zoom_two">2x</string>
+    <string name="stop_recording_first">पहले रिकॉर्डिंग बंद करें</string>
+    <string name="status_recording">रेक %1$s</string>
+</resources>
