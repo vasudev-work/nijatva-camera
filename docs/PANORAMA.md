@@ -36,9 +36,11 @@ Be clear about this before trusting the output:
   offsetting `y` by `f_px * tan(pitch_delta)` and growing the output height.
 - **No roll correction.** Holding the phone tilted rotates each frame against the
   last one; frame-to-frame alignment would fix it.
-- **No exposure equalisation.** Frames taken while panning past a window come out
-  brighter or darker, and the feather blend cannot hide a brightness step. The
-  fix is a mean match over the overlap region before compositing.
+- **Exposure equalisation is coarse.** Every frame is mean-matched onto the
+  first one (`ExposureMatch`), which removes the brightness step when the camera
+  settles on a different exposure mid-sweep. It is one gain for the whole frame,
+  so a bright window that appears in only one frame still shows; that needs tone
+  mapping, not matching.
 - **Not a true 360 sphere.** This produces a wide horizontal panorama. A real
   Photo Sphere needs rows, spherical projection and a viewer.
 - **No seam finding.** Placement trusts the gyro entirely; image alignment is

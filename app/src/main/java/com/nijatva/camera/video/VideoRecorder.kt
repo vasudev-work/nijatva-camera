@@ -15,7 +15,8 @@ import java.io.File
  * cannot be restarted after stop(), so the engine builds a fresh one for every
  * take.
  *
- * Video only for now. Microphone audio needs RECORD_AUDIO and is a later step.
+ * Audio is optional and mono AAC. The caller must hold RECORD_AUDIO before
+ * passing withAudio = true.
  */
 class VideoRecorder(
     context: Context,
@@ -23,6 +24,7 @@ class VideoRecorder(
     size: Size,
     fps: Int,
     orientationHint: Int,
+    withAudio: Boolean = false,
 ) {
     private val recorder: MediaRecorder = createRecorder(context)
 
@@ -33,8 +35,16 @@ class VideoRecorder(
     init {
         try {
             recorder.setVideoSource(MediaRecorder.VideoSource.SURFACE)
+            // CAMCORDER is the source tuned for video; it needs RECORD_AUDIO granted.
+            if (withAudio) recorder.setAudioSource(MediaRecorder.AudioSource.CAMCORDER)
             recorder.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
             recorder.setVideoEncoder(MediaRecorder.VideoEncoder.H264)
+            if (withAudio) {
+                recorder.setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
+                recorder.setAudioEncodingBitRate(128_000)
+                recorder.setAudioSamplingRate(44_100)
+                recorder.setAudioChannels(1)
+            }
             recorder.setVideoSize(size.width, size.height)
             recorder.setVideoFrameRate(fps)
             recorder.setVideoEncodingBitRate(bitrateFor(size, fps))

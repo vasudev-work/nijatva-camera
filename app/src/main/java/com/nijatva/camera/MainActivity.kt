@@ -99,6 +99,10 @@ class MainActivity : AppCompatActivity(), CameraEngine.Callback {
     private var lastSavedUri: Uri? = null
     private val stillness = com.nijatva.camera.camera.StillnessTracker()
     private var ringColor = 0
+    private var audioAsked = false
+    private var movedSince = 0L
+    private lateinit var histogramView: com.nijatva.camera.ui.HistogramView
+    private lateinit var peakingOverlay: android.widget.ImageView
     private var wasRecording = false
     private lateinit var shutterRing: GradientDrawable
     private var panoActive = false
@@ -156,6 +160,32 @@ class MainActivity : AppCompatActivity(), CameraEngine.Callback {
         if (engine.recording) engine.stopVideo()
     }
 
+    override fun onAnalysis(
+        histogram: IntArray,
+        peaking: IntArray,
+        width: Int,
+        height: Int,
+        rotationDegrees: Int,
+    ) = runOnUiThread {
+        if (settings.histogram && histogram.isNotEmpty()) {
+            histogramView.setBins(histogram)
+            histogramView.visibility = View.VISIBLE
+        }
+
+        if (settings.focusPeaking && peaking.isNotEmpty()) {
+            val mask = android.graphics.Bitmap.createBitmap(
+                peaking, width, height, android.graphics.Bitmap.Config.ARGB_8888,
+            )
+            // The analysis frame is sensor-native; turn it to match the upright preview.
+            peakingOverlay.setImageBitmap(com.nijatva.camera.camera.Orientation.rotate(mask, rotationDegrees))
+            val lp = peakingOverlay.layoutParams
+            if (preview.width > 0 && (lp.width != preview.width || lp.height != preview.height)) {
+                peakingOverlay.layoutParams = FrameLayout.LayoutParams(preview.width, preview.height, Gravity.CENTER)
+            }
+            peakingOverlay.visibility = View.VISIBLE
+        }
+    }
+
     override fun onDestroy() {
         uiTicker.removeCallbacksAndMessages(null)
         stopPanorama()
@@ -187,6 +217,22 @@ class MainActivity : AppCompatActivity(), CameraEngine.Callback {
         root.addView(sphereOverlay, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
         ))
+
+        // Peaking sits over the preview, sized to the preview each time it changes.
+        peakingOverlay = android.widget.ImageView(this).apply {
+            scaleType = android.widget.ImageView.ScaleType.FIT_XY
+            visibility = View.GONE
+            isClickable = false
+        }
+        root.addView(peakingOverlay, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT, Gravity.CENTER
+        ))
+
+        histogramView = com.nijatva.camera.ui.HistogramView(this).apply { visibility = View.GONE }
+        root.addView(histogramView, FrameLayout.LayoutParams(dp(140), dp(56), Gravity.TOP or Gravity.END).apply {
+            topMargin = dp(64)
+            rightMargin = dp(12)
+        })
 
         // ---- top chrome: flash on the left, menu on the right
         topBar = LinearLayout(this).apply {
@@ -526,6 +572,11 @@ class MainActivity : AppCompatActivity(), CameraEngine.Callback {
             chip.alpha = if (chosen) 1f else 0.75f
         }
         statusStrip.visibility = if (mode == Mode.PRO) View.VISIBLE else View.GONE
+        // Analysis only runs in Photo and Pro, so hide its overlays in other modes.
+        if (mode != Mode.PHOTO && mode != Mode.PRO) {
+            histogramView.visibility = View.GONE
+            peakingOverlay.visibility = View.GONE
+        }
 
         if (mode == Mode.PANORAMA) startPanorama()
     }
@@ -588,7 +639,7 @@ class MainActivity : AppCompatActivity(), CameraEngine.Callback {
     // ---------------------------------------------------------------- misc
 
     private fun openSettings() {
-        SettingsSheet(this, settings) { updated ->
+        SettingsSheet(this, settings, onPresets = { showPresets() }) { updated ->
             settings = updated
             store.save(updated)
             applySettings()
@@ -604,6 +655,12 @@ class MainActivity : AppCompatActivity(), CameraEngine.Callback {
             )
         }
         engine.rawPlusJpeg = settings.rawPlusJpeg
+        engine.setAstroConfig(settings.astroSeconds, settings.astroFrames)
+        engine.setVideoAudio(settings.recordAudio && hasAudioPermission())
+        engine.histogramWanted = settings.histogram
+        engine.peakingWanted = settings.focusPeaking
+        if (!settings.histogram) histogramView.visibility = View.GONE
+        if (!settings.focusPeaking) peakingOverlay.visibility = View.GONE
         engine.mirrorFront = settings.saveSelfieAsPreviewed
         engine.wideColour = settings.wideColour
         engine.rawBitDepth = settings.rawBitDepth
@@ -633,7 +690,179 @@ class MainActivity : AppCompatActivity(), CameraEngine.Callback {
     }
 
     /** Countdown, with the torch held on if the timer light is enabled. */
+    /**
+     * Video needs the microphone permission before the recorder is built. The first
+     * record press asks for it and waits for the answer. A denial, or an earlier one,
+     * records picture only. Returns false when recording should wait for the prompt.
+     */
+    private fun prepareVideoAudio(): Boolean {
+        val wanted = currentMode == Mode.VIDEO && !engine.recording && settings.recordAudio
+        if (!wanted) {
+            engine.setVideoAudio(false)
+            return true
+        }
+        if (hasAudioPermission()) {
+            engine.setVideoAudio(true)
+            return true
+        }
+        if (!audioAsked) {
+            audioAsked = true
+            requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), REQUEST_AUDIO)
+            return false
+        }
+        engine.setVideoAudio(false)
+        return true
+    }
+
+    /**
+     * Astro: if the phone keeps moving for two seconds during a stack, cancel it.
+     * A blurred stack is worse than no stack, and the preview must come back.
+     */
+    private fun watchAstroMotion() {
+        if (currentMode != Mode.ASTRO || !engine.collecting) {
+            movedSince = 0L
+            return
+        }
+        if (!gyro.isAvailable || stillness.isStill()) {
+            movedSince = 0L
+            return
+        }
+        val now = System.currentTimeMillis()
+        if (movedSince == 0L) {
+            movedSince = now
+        } else if (now - movedSince > 2_000L) {
+            movedSince = 0L
+            engine.abortCapture("Phone moved. Astro stack cancelled, nothing was saved")
+        }
+    }
+
+    /** Presets and backup. Save or load named setups, share the JSON, or reset to defaults. */
+    private fun showPresets() {
+        val names = store.presetNames()
+        val items = mutableListOf(
+            "Save current settings as a preset",
+            "Share settings as JSON",
+            "Import settings from file",
+            "Reset to defaults",
+        )
+        names.forEach { items += "Load: $it" }
+        names.forEach { items += "Delete: $it" }
+        val fixed = 4
+
+        AlertDialog.Builder(this)
+            .setTitle("Presets and backup")
+            .setItems(items.toTypedArray()) { _, which ->
+                when {
+                    which == 0 -> askPresetName()
+                    which == 1 -> shareSettings()
+                    which == 2 -> pickSettingsFile()
+                    which == 3 -> {
+                        store.reset()
+                        settings = Settings()
+                        applySettings()
+                        Toast.makeText(this, "Settings reset to defaults", Toast.LENGTH_SHORT).show()
+                    }
+                    which - fixed < names.size -> {
+                        val name = names[which - fixed]
+                        store.loadPreset(name)?.let {
+                            settings = it
+                            store.save(it)
+                            applySettings()
+                            Toast.makeText(this, "Loaded $name", Toast.LENGTH_SHORT).show()
+                        } ?: Toast.makeText(this, "Preset $name could not be read", Toast.LENGTH_SHORT).show()
+                    }
+                    else -> {
+                        val name = names[which - fixed - names.size]
+                        store.deletePreset(name)
+                        Toast.makeText(this, "Deleted $name", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+            .setNegativeButton("Close", null)
+            .show()
+    }
+
+    private fun askPresetName() {
+        val input = android.widget.EditText(this).apply { hint = "Preset name" }
+        AlertDialog.Builder(this)
+            .setTitle("Save preset")
+            .setView(input)
+            .setPositiveButton("Save") { _, _ ->
+                val name = input.text.toString().trim()
+                if (name.isEmpty()) {
+                    Toast.makeText(this, "Give the preset a name", Toast.LENGTH_SHORT).show()
+                } else {
+                    store.savePreset(name, settings)
+                    Toast.makeText(this, "Saved $name", Toast.LENGTH_SHORT).show()
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    /** Sends the settings as JSON through the system share sheet, for a backup or another phone. */
+    private fun shareSettings() {
+        val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+            type = "application/json"
+            putExtra(android.content.Intent.EXTRA_SUBJECT, "Nijatva Camera settings")
+            putExtra(android.content.Intent.EXTRA_TEXT, store.exportJson(settings))
+        }
+        startActivity(android.content.Intent.createChooser(send, "Share settings"))
+    }
+
+    /**
+     * Opens the system file picker for a settings JSON. The picker hands back a
+     * content URI, so no storage permission is needed and the file can live
+     * anywhere the user can see.
+     */
+    private fun pickSettingsFile() {
+        val open = android.content.Intent(android.content.Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(android.content.Intent.CATEGORY_OPENABLE)
+            type = "*/*"
+            putExtra(
+                android.content.Intent.EXTRA_MIME_TYPES,
+                arrayOf("application/json", "text/plain", "application/octet-stream"),
+            )
+        }
+        startActivityForResult(
+            android.content.Intent.createChooser(open, "Import settings"),
+            REQUEST_IMPORT,
+        )
+    }
+
+    /** Reads the picked file, and applies it only if it parses as settings JSON. */
+    private fun importSettingsFrom(uri: Uri) {
+        val text = runCatching {
+            contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
+        }.getOrNull()
+
+        if (text.isNullOrBlank()) {
+            Toast.makeText(this, "That file could not be read", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val imported = store.importJson(text)
+        if (imported == null) {
+            Toast.makeText(this, "That file is not a settings backup", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        settings = imported
+        store.save(imported)
+        applySettings()
+        Toast.makeText(this, "Settings imported", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun hasAudioPermission(): Boolean =
+        ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+
     private fun captureWithTimer() {
+        if (!prepareVideoAudio()) return
+        // Astro needs a tripod. Refuse to start while the phone is moving.
+        if (currentMode == Mode.ASTRO && gyro.isAvailable && !stillness.isStill()) {
+            statusText.text = "Put the phone on a tripod first. It must be still"
+            return
+        }
         val seconds = settings.timer.seconds
         if (seconds <= 0) {
             statusText.text = "Capturing"
@@ -667,6 +896,7 @@ class MainActivity : AppCompatActivity(), CameraEngine.Callback {
             stillness.push(gyro.yawDegrees, gyro.pitchDegrees, gyro.rollDegrees)
             updateShutterRing()
             updateRecordingStatus()
+            watchAstroMotion()
             uiTicker.postDelayed(this, 150)
         }
     }
@@ -678,7 +908,7 @@ class MainActivity : AppCompatActivity(), CameraEngine.Callback {
     private fun updateShutterRing() {
         val color = when {
             engine.recording -> Color.parseColor("#FF3B30")
-            currentMode == Mode.NIGHT && gyro.isAvailable ->
+            (currentMode == Mode.NIGHT || currentMode == Mode.ASTRO) && gyro.isAvailable ->
                 if (stillness.isStill()) Color.parseColor("#34C759") else Color.parseColor("#FFB020")
             else -> Color.argb(150, 255, 255, 255)
         }
@@ -804,6 +1034,13 @@ class MainActivity : AppCompatActivity(), CameraEngine.Callback {
 
     // ---------------------------------------------------------------- plumbing
 
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: android.content.Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != REQUEST_IMPORT) return
+        if (resultCode != android.app.Activity.RESULT_OK) return
+        data?.data?.let { importSettingsFrom(it) }
+    }
+
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == REQUEST_CAMERA) {
@@ -812,6 +1049,10 @@ class MainActivity : AppCompatActivity(), CameraEngine.Callback {
             } else {
                 statusText.text = "Camera permission is required"
             }
+        } else if (requestCode == REQUEST_AUDIO) {
+            val granted = grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED
+            engine.setVideoAudio(granted && settings.recordAudio)
+            statusText.text = if (granted) "Audio on. Tap record again" else "Recording without audio"
         }
     }
 
@@ -822,6 +1063,8 @@ class MainActivity : AppCompatActivity(), CameraEngine.Callback {
 
     private companion object {
         const val REQUEST_CAMERA = 101
+        const val REQUEST_AUDIO = 102
+        const val REQUEST_IMPORT = 103
         const val PANO_STEP_DEGREES = 8f
         const val PANO_MAX_FRAMES = 24
     }

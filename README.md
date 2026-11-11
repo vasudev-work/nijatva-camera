@@ -29,9 +29,9 @@ the app.
 
 ## What it deliberately does not do
 
-- No audio in video yet. Video mode records picture only (`MediaRecorder` with a
-  surface source, H.264 MP4). Microphone audio needs `RECORD_AUDIO` and is a
-  separate step.
+- Video records H.264 MP4 with optional mono AAC audio from the microphone
+  (`MediaRecorder`, camcorder source). Audio asks for `RECORD_AUDIO` the first time
+  you record, and is off when the permission is denied.
 - No beauty, no AI scene detection, no portrait bokeh. Those are vendor
   algorithms shipped inside the OEM camera; nothing here can reproduce them.
 - No optical quality improvement. Noise, tone and colour improve through

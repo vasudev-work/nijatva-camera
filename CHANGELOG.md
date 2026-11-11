@@ -33,3 +33,81 @@
 
 Not yet: audio, zero shutter lag, GPU fusion, astro mode, histogram, focus
 peaking, presets UI, panorama orientation fix.
+
+## Phase 2, part 2: histogram and focus peaking (Photo and Pro)
+
+- **Histogram.** A 256-bin brightness histogram in the top-right of the
+  viewfinder. Amber bars mark clipped shadows and highlights. Settings > Pro >
+  Viewfinder analysis.
+- **Focus peaking.** Red overlay on sharp edges, rotated to match the upright
+  preview. Same settings section.
+- **Analysis stream.** A low-resolution YUV stream (about 640 x 480) runs next to
+  the preview in Photo and Pro, only on full or level-3 devices. Every third frame
+  is measured. Work is skipped while both options are off.
+- **Pure logic in `analysis/FrameAnalysis.kt`,** with JVM tests in
+  `FrameAnalysisTest`.
+
+Known limits: peaking is not mirrored for the front camera, and the fixed
+threshold (40) may need tuning per scene.
+
+## Phase 2, part 3: video audio
+
+- **Microphone audio in video.** Mono AAC, 128 kbps, 44.1 kHz, camcorder source.
+  Settings > Pro > Video > Record audio, on by default.
+- **Permission flow.** The first record press asks for `RECORD_AUDIO`. Granting it
+  turns audio on; tap record again to start. Denying it records picture only.
+- The session is rebuilt once when audio is turned on, since the recorder is
+  prepared with the session.
+
+## Phase 3: astro mode (full edition)
+
+- **Astro mode.** Six 4-second exposures at ISO 3200, aligned and stacked with
+  the existing Stacker. Ghost rejection removes outliers such as planes and
+  meteors. A stack takes about 30 seconds.
+- **Tripod gate.** The shutter refuses to start while the gyro reports movement.
+  If the device has no gyro, the check is skipped.
+- **Frame duration.** Exposures longer than 33 ms set `SENSOR_FRAME_DURATION` so
+  the HAL does not shorten them. Night mode is unaffected below that limit.
+
+Not yet: exposure and frame count as settings, movement abort during a stack,
+and tone-curve tuning on a real night sky. The 4 s and ISO 3200 values are
+starting points.
+
+## Phase 3, part 2: astro settings, movement abort, presets
+
+- **Astro settings.** Exposure per frame (2, 4 or 8 s) and frame count (4, 6 or
+  10) in Settings > Pro > Astro. Changing them in Astro mode rebuilds the session.
+- **Movement abort.** If the phone keeps moving for two seconds during an astro
+  stack, the stack is cancelled, the preview comes back, and nothing is saved.
+- **Presets and backup.** "Presets and backup" in the settings sheet saves,
+  loads and deletes named presets, shares the settings as JSON, and resets to
+  defaults. Reset keeps saved presets.
+- Importing a settings JSON file is not wired to a file picker yet. The store
+  supports it through `importJson`. (Done in Phase 4, part 1.)
+
+## Phase 4, part 1: real alignment and exposure matching
+
+- **Coarse-to-fine alignment.** `camera/Align.kt` now searches three pyramid
+  levels (1/32, 1/16, 1/8) instead of one. The coarse level reaches ±96 pixels of
+  full-resolution drift, so a bigger handshake is registered instead of clipped,
+  and every level is a box average rather than a point sample, which stops
+  brickwork, foliage and fabric from aliasing into a false match. `AlignPyramid`
+  builds the reference levels once per burst and `Stacker` reuses them.
+- **Per-frame exposure match.** `camera/ExposureMatch.kt` measures the mid-tone
+  mean ratio over the overlap, after the alignment shift, and scales each frame
+  onto the first - luma and chroma - before it is fused. Auto-exposure drift no
+  longer averages a night stack to mid grey. Clipped highlights and crushed
+  shadows are skipped because they carry no brightness information.
+- **Panorama seam brightness.** `process/PanoramaStitcher.kt` matches every
+  frame's exposure to the first one, so panning out of shade or past a window no
+  longer leaves a hard step at the seam.
+- **Import settings from a file.** "Presets and backup" > "Import settings from
+  file" opens the system file picker and applies a JSON backup through
+  `SettingsStore.importJson`. A file that does not parse as settings is refused
+  with a message instead of half-applying.
+- **Tests.** `AlignTest` covers shift recovery at both small and large drift,
+  identical frames and the tiny-frame fallback; `ExposureMatchTest` covers ratio
+  recovery in both directions, clipped-pixel handling, the no-overlap fallback
+  and flat frames.
+
+Still not modelled: rotation between frames, GPU fusion, zero shutter lag.

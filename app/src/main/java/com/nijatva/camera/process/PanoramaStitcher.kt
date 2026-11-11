@@ -1,6 +1,7 @@
 package com.nijatva.camera.process
 
 import android.graphics.Bitmap
+import com.nijatva.camera.camera.ExposureMatch
 import com.nijatva.camera.camera.YuvFrame
 import kotlin.math.abs
 import kotlin.math.max
@@ -19,9 +20,15 @@ import kotlin.math.min
  * buffer instead of one accumulator per frame, which is the difference between
  * 35 MB and 150 MB on a 6 megapixel panorama.
  *
- * Not implemented: vertical stitching, roll correction, exposure equalisation
- * between frames, and true spherical projection. A sweep that drifts up or down
- * will show a step at the seam. See docs/PANORAMA.md.
+ * Every frame is mean-matched onto the first one with [ExposureMatch] before it
+ * is composited. Panning past a window or out of shade changes the exposure the
+ * camera settles on, and without the match that change lands at the seam as a
+ * hard brightness step. A single gain per frame fixes the step; it does not tone
+ * map a bright window that only appears in one frame.
+ *
+ * Not implemented: vertical stitching, roll correction and true spherical
+ * projection. A sweep that drifts up or down will still show a step at the seam.
+ * See docs/PANORAMA.md.
  */
 class PanoramaStitcher(private val focalPixels: Float) {
 
@@ -56,7 +63,13 @@ class PanoramaStitcher(private val focalPixels: Float) {
 
         for (entry in frames) {
             val offsetX = ((entry.yawRadians - minYaw) * focalPixels).toInt()
-            composite(entry.frame, out, outWidth, outHeight, offsetX, feather)
+            val gain = ExposureMatch.gain(
+                reference = firstFrame.luma,
+                moving = entry.frame.luma,
+                width = frameWidth,
+                height = frameHeight,
+            )
+            composite(entry.frame, out, outWidth, outHeight, offsetX, feather, gain)
         }
 
         return Bitmap.createBitmap(out, outWidth, outHeight, Bitmap.Config.ARGB_8888)
@@ -69,6 +82,7 @@ class PanoramaStitcher(private val focalPixels: Float) {
         outHeight: Int,
         offsetX: Int,
         feather: Float,
+        gain: Float,
     ) {
         val height = min(frame.height, outHeight)
         val chromaWidth = frame.chromaWidth
@@ -88,7 +102,8 @@ class PanoramaStitcher(private val focalPixels: Float) {
                 val alpha = (edge / feather).coerceIn(0f, 1f)
 
                 val ci = chromaRow + (x / 2)
-                val lumaValue = (frame.luma[lumaRow + x].toInt() and 0xFF).toFloat()
+                val rawLuma = (frame.luma[lumaRow + x].toInt() and 0xFF).toFloat()
+                val lumaValue = if (gain == 1.0f) rawLuma else (rawLuma * gain).coerceIn(0f, 255f)
                 val u = (frame.chromaU[ci].toInt() and 0xFF) - 128
                 val v = (frame.chromaV[ci].toInt() and 0xFF) - 128
 

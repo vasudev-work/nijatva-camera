@@ -12,8 +12,9 @@ enum class Mode(val label: String) {
     PANORAMA("Sphere"),
     RAW("RAW"),
     VIDEO("Video"),
+    ASTRO("Astro"),
     ;
 
     /** Modes that need the YUV reader and on-device fusion. */
-    val isComputational: Boolean get() = this == NIGHT || this == HDR
+    val isComputational: Boolean get() = this == NIGHT || this == HDR || this == ASTRO
 }

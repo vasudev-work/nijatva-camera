@@ -58,6 +58,12 @@ class CameraEngine(
 
         /** Panorama frame count after each accepted frame. */
         fun onPanoramaProgress(frames: Int)
+
+        /**
+         * Viewfinder analysis for one low-resolution frame. Arrays are empty when that
+         * measurement is not wanted. rotationDegrees turns sensor pixels upright.
+         */
+        fun onAnalysis(histogram: IntArray, peaking: IntArray, width: Int, height: Int, rotationDegrees: Int) = Unit
     }
 
     private class Step(val exposureNs: Long?, val iso: Int?, val skip: Int, val keep: Int)
@@ -75,6 +81,12 @@ class CameraEngine(
     private var jpegReader: ImageReader? = null
     private var yuvReader: ImageReader? = null
     private var rawReader: ImageReader? = null
+    private var analysisReader: ImageReader? = null
+    private var analysisCounter = 0
+
+    /** Set from the settings. Analysis work is skipped entirely while both are off. */
+    @Volatile var histogramWanted: Boolean = false
+    @Volatile var peakingWanted: Boolean = false
 
     private var caps: DeviceCapabilities? = null
     private var cameraId: String = ""
@@ -86,6 +98,22 @@ class CameraEngine(
     private var videoRecorder: com.nijatva.camera.video.VideoRecorder? = null
     private var videoFile: java.io.File? = null
     private var recordStartedAt = 0L
+
+    /** Whether the next recorder captures sound. Only takes effect when the session is rebuilt. */
+    @Volatile private var videoAudio = false
+
+    /**
+     * Turns microphone capture on or off for video. The recorder is prepared with the
+     * session, so a change in Video mode rebuilds the session once. The caller must have
+     * RECORD_AUDIO before enabling it.
+     */
+    fun setVideoAudio(enabled: Boolean) {
+        if (enabled == videoAudio) return
+        videoAudio = enabled
+        handler.post {
+            if (mode == Mode.VIDEO && !recording) createSession()
+        }
+    }
 
     /** True while a take is being encoded. Read by the activity for the REC indicator. */
     @Volatile var recording: Boolean = false
@@ -114,6 +142,15 @@ class CameraEngine(
 
     @Volatile
     private var busy = false
+
+    /** Astro settings, read when the session is built. Use setAstroConfig to change them. */
+    @Volatile var astroSeconds: Int = 4
+        private set
+    @Volatile var astroFrames: Int = 6
+        private set
+
+    /** True while frames are still being collected for a stack. */
+    val collecting: Boolean get() = busy && planIndex < plan.size
 
     private var meteringPoint: android.graphics.PointF? = null
 
@@ -296,7 +333,7 @@ class CameraEngine(
         when (mode) {
             Mode.PHOTO, Mode.PRO -> captureJpeg()
             Mode.RAW -> captureRaw()
-            Mode.NIGHT, Mode.HDR -> startComputational()
+            Mode.NIGHT, Mode.HDR, Mode.ASTRO -> startComputational()
             Mode.PANORAMA -> callback.onNotice("Panorama frames are captured automatically as you turn")
             Mode.VIDEO -> if (recording) stopVideo() else startVideo()
         }
@@ -381,6 +418,10 @@ class CameraEngine(
 
         plan = if (mode == Mode.NIGHT) {
             listOf(Step(exposureNs = nightExposureNs(c), iso = nightIso(c), skip = 3, keep = NIGHT_FRAMES))
+        } else if (mode == Mode.ASTRO) {
+            // One long exposure setting for every frame. Skip one frame so the
+            // new exposure has settled before it is kept.
+            listOf(Step(exposureNs = astroExposureNs(c), iso = astroIso(c), skip = 1, keep = astroFrames))
         } else {
             val base = baseExposureNs(c)
             listOf(
@@ -399,8 +440,11 @@ class CameraEngine(
             val request = buildRequest(CameraDevice.TEMPLATE_PREVIEW, null, step.iso, step.exposureNs)
             s.setRepeatingRequest(request, metricsCallback, handler)
             callback.onNotice(
-                if (mode == Mode.NIGHT) "Capturing ${NIGHT_FRAMES} frames, hold still"
-                else "Bracketing ${planIndex + 1}/${plan.size}"
+                when (mode) {
+                    Mode.NIGHT -> "Capturing $NIGHT_FRAMES frames, hold still"
+                    Mode.ASTRO -> "Exposing $astroFrames long frames. Do not touch the tripod"
+                    else -> "Bracketing ${planIndex + 1}/${plan.size}"
+                }
             )
         } catch (t: Throwable) {
             busy = false
@@ -444,7 +488,11 @@ class CameraEngine(
 
         processor.execute {
             try {
-                val raw = if (capturedMode == Mode.NIGHT) stackNight(captured) else fuseHdr(captured)
+                val raw = when (capturedMode) {
+                    Mode.NIGHT -> stackNight(captured)
+                    Mode.ASTRO -> stackAstro(captured)
+                    else -> fuseHdr(captured)
+                }
                 // Stacking works on sensor-native frames, so turn the merged result
                 // upright here. Its pixels then look right in every gallery app.
                 val upright = Orientation.rotate(raw, jpegRotation())
@@ -466,6 +514,14 @@ class CameraEngine(
                 handler.post { callback.onFailure("Merging failed: ${t.message}") }
             }
         }
+    }
+
+    private fun stackAstro(captured: List<YuvFrame>): android.graphics.Bitmap {
+        check(captured.isNotEmpty()) { "No frames captured" }
+        val first = captured.first()
+        val stacker = Stacker(first.width, first.height)
+        captured.forEach { stacker.add(it) }
+        return stacker.toBitmap(gain = ASTRO_GAIN, gamma = ASTRO_GAMMA, saturation = 1.1f)
     }
 
     private fun stackNight(captured: List<YuvFrame>): android.graphics.Bitmap {
@@ -538,6 +594,19 @@ class CameraEngine(
                     setOnImageAvailableListener({ reader -> onJpegAvailable(reader) }, handler)
                 }
                 jpegReader?.surface?.let { outputs += it }
+
+                // Analysis stream for the histogram and peaking. Only on full or level-3
+                // devices, where a third output is allowed next to preview and JPEG.
+                if (c.supportsManualControls) {
+                    c.yuvSizeWithin(ANALYSIS_MAX_PIXELS, aspect.ratio)?.let { analysis ->
+                        analysisReader = ImageReader.newInstance(
+                            analysis.width, analysis.height, ImageFormat.YUV_420_888, 3,
+                        ).apply {
+                            setOnImageAvailableListener({ reader -> onAnalysisAvailable(reader) }, handler)
+                        }
+                        analysisReader?.surface?.let { outputs += it }
+                    }
+                }
             }
 
             Mode.RAW -> {
@@ -570,7 +639,7 @@ class CameraEngine(
                 videoFile = file
                 try {
                     val recorder = com.nijatva.camera.video.VideoRecorder(
-                        context, file, size, VIDEO_FPS, jpegRotation(),
+                        context, file, size, VIDEO_FPS, jpegRotation(), videoAudio,
                     )
                     videoRecorder = recorder
                     outputs += recorder.surface
@@ -580,9 +649,9 @@ class CameraEngine(
                 }
             }
 
-            Mode.NIGHT, Mode.HDR, Mode.PANORAMA -> {
+            Mode.NIGHT, Mode.HDR, Mode.PANORAMA, Mode.ASTRO -> {
                 val limit = when (mode) {
-                    Mode.NIGHT -> NIGHT_MAX_PIXELS
+                    Mode.NIGHT, Mode.ASTRO -> NIGHT_MAX_PIXELS
                     Mode.HDR -> HDR_MAX_PIXELS
                     else -> PANORAMA_MAX_PIXELS
                 }
@@ -591,7 +660,11 @@ class CameraEngine(
                     callback.onFailure("This camera exposes no YUV output, so fusion is not possible")
                     return
                 }
-                val maxImages = if (mode == Mode.NIGHT) NIGHT_FRAMES + 4 else 6
+                val maxImages = when (mode) {
+                    Mode.NIGHT -> NIGHT_FRAMES + 4
+                    Mode.ASTRO -> astroFrames + 4
+                    else -> 6
+                }
                 yuvReader = ImageReader.newInstance(size.width, size.height, ImageFormat.YUV_420_888, maxImages).apply {
                     setOnImageAvailableListener({ reader -> onYuvAvailable(reader) }, handler)
                 }
@@ -720,6 +793,37 @@ class CameraEngine(
             ?: android.util.Size(1280, 720)
     }
 
+    /**
+     * Analysis frames arrive continuously. Only the newest one is used, and only every
+     * ANALYSIS_EVERY-th frame is measured, so this stays cheap at 30 fps.
+     */
+    private fun onAnalysisAvailable(reader: ImageReader) {
+        val image = reader.acquireLatestImage() ?: return
+        try {
+            analysisCounter++
+            val wanted = histogramWanted || peakingWanted
+            if (!wanted || busy || analysisCounter % ANALYSIS_EVERY != 0) return
+            val frame = YuvFrame.from(image)
+            val hist = if (histogramWanted) {
+                com.nijatva.camera.analysis.FrameAnalysis.histogram(frame.luma, frame.width, frame.height)
+            } else {
+                IntArray(0)
+            }
+            val peaks = if (peakingWanted) {
+                com.nijatva.camera.analysis.FrameAnalysis.peakingArgb(
+                    frame.luma, frame.width, frame.height, PEAK_THRESHOLD,
+                )
+            } else {
+                IntArray(0)
+            }
+            callback.onAnalysis(hist, peaks, frame.width, frame.height, jpegRotation())
+        } catch (t: Throwable) {
+            Log.e(TAG, "Analysis frame failed", t)
+        } finally {
+            image.close()
+        }
+    }
+
     private fun restartPreview() {
         val s = session ?: return
         try {
@@ -760,6 +864,7 @@ class CameraEngine(
         target?.let { builder.addTarget(it) }
         if (template != CameraDevice.TEMPLATE_STILL_CAPTURE) {
             yuvReader?.surface?.let { builder.addTarget(it) }
+            analysisReader?.surface?.let { builder.addTarget(it) }
         }
 
         caps?.let { applyZoom(builder, it) }
@@ -797,7 +902,10 @@ class CameraEngine(
         if (iso != null || exposure != null) {
             builder.set(CaptureRequest.CONTROL_AE_MODE, CameraMetadata.CONTROL_AE_MODE_OFF)
             iso?.let { builder.set(CaptureRequest.SENSOR_SENSITIVITY, it) }
-            exposure?.let { builder.set(CaptureRequest.SENSOR_EXPOSURE_TIME, it) }
+            exposure?.let {
+                builder.set(CaptureRequest.SENSOR_EXPOSURE_TIME, it)
+                if (it > 33_000_000L) builder.set(CaptureRequest.SENSOR_FRAME_DURATION, it + 1_000_000L)
+            }
         }
 
         settings.evSteps?.let { steps ->
@@ -942,6 +1050,8 @@ class CameraEngine(
         jpegReader?.close()
         yuvReader?.close()
         rawReader?.close()
+        analysisReader?.close()
+        analysisReader = null
         jpegReader = null
         yuvReader = null
         rawReader = null
@@ -972,6 +1082,44 @@ class CameraEngine(
         return minOf(max, NIGHT_ISO).coerceAtLeast(100)
     }
 
+    /** Sets the astro exposure and frame count. A change in Astro mode rebuilds the session once. */
+    fun setAstroConfig(seconds: Int, frames: Int) {
+        val s = seconds.coerceIn(2, 8)
+        val f = frames.coerceIn(4, 10)
+        if (s == astroSeconds && f == astroFrames) return
+        astroSeconds = s
+        astroFrames = f
+        handler.post {
+            if (mode == Mode.ASTRO && !busy) createSession()
+        }
+    }
+
+    /**
+     * Cancels a stack that is still collecting frames, for example when the phone
+     * moved. Nothing is saved. The preview is restored.
+     */
+    fun abortCapture(reason: String) {
+        if (!collecting) return
+        handler.post {
+            busy = false
+            plan = emptyList()
+            planIndex = 0
+            frames.clear()
+            restartPreview()
+            callback.onFailure(reason)
+        }
+    }
+
+    private fun astroExposureNs(c: DeviceCapabilities): Long {
+        val wanted = astroSeconds * 1_000_000_000L
+        return clampExposure(minOf(wanted, c.exposureRange?.upper ?: wanted), c)
+    }
+
+    private fun astroIso(c: DeviceCapabilities): Int {
+        val max = c.isoRange?.upper ?: ASTRO_ISO
+        return minOf(max, ASTRO_ISO).coerceAtLeast(100)
+    }
+
     private fun baseExposureNs(c: DeviceCapabilities): Long =
         minOf(c.exposureRange?.upper ?: 8_000_000L, 8_000_000L).coerceAtLeast(1_000_000L)
 
@@ -983,10 +1131,28 @@ class CameraEngine(
     private companion object {
         const val TAG = "CameraEngine"
         const val NIGHT_FRAMES = 8
+
+        /** Astro: a few long exposures, aligned and stacked. Each one is 4 s at ISO 3200. */
+        const val ASTRO_FRAMES = 6
+        const val ASTRO_EXPOSURE_NS = 4_000_000_000L
+        const val ASTRO_ISO = 3200
+
+        /** Tone curve for a stack of dark frames. Starting point; tune on a real night sky. */
+        const val ASTRO_GAIN = 2.2f
+        const val ASTRO_GAMMA = 1.8f
         // Tuned for an 8 MP-class YUV stream: 8 frames at 2560x1920 peak around
         // 110 MB with the accumulators, which fits a 4 GB phone's heap. Going to
         // 3264x2448 doubles that and starts throwing OutOfMemoryError mid-stack.
         const val NIGHT_MAX_PIXELS = 5_000_000L
+
+        /** Viewfinder analysis runs on a frame this small: about 640 x 480. */
+        const val ANALYSIS_MAX_PIXELS = 307_200L
+
+        /** Analyse every third frame, about 10 per second at 30 fps. */
+        const val ANALYSIS_EVERY = 3
+
+        /** Gradient above this counts as an edge. Tuned on the 0 to 255 luma scale. */
+        const val PEAK_THRESHOLD = 40
         const val HDR_MAX_PIXELS = 5_000_000L
         const val NIGHT_MAX_EXPOSURE_NS = 40_000_000L
         const val NIGHT_ISO = 3200

@@ -48,6 +48,11 @@ data class Settings(
     val rawBitDepth: Int = 16,
     val jpegQuality: Int = 97,
     val vibrationOnShutter: Boolean = true,
+    val histogram: Boolean = false,
+    val focusPeaking: Boolean = false,
+    val recordAudio: Boolean = true,
+    val astroSeconds: Int = 4,
+    val astroFrames: Int = 6,
 )
 
 /**
@@ -78,6 +83,11 @@ class SettingsStore(context: Context) {
             rawBitDepth = prefs.getInt("rawBitDepth", defaults.rawBitDepth),
             jpegQuality = prefs.getInt("jpegQuality", defaults.jpegQuality),
             vibrationOnShutter = prefs.getBoolean("vibrationOnShutter", defaults.vibrationOnShutter),
+            histogram = prefs.getBoolean("histogram", defaults.histogram),
+            focusPeaking = prefs.getBoolean("focusPeaking", defaults.focusPeaking),
+            recordAudio = prefs.getBoolean("recordAudio", defaults.recordAudio),
+            astroSeconds = prefs.getInt("astroSeconds", defaults.astroSeconds).coerceIn(2, 8),
+            astroFrames = prefs.getInt("astroFrames", defaults.astroFrames).coerceIn(4, 10),
         )
     }
 
@@ -98,6 +108,11 @@ class SettingsStore(context: Context) {
             .putInt("rawBitDepth", settings.rawBitDepth)
             .putInt("jpegQuality", settings.jpegQuality)
             .putBoolean("vibrationOnShutter", settings.vibrationOnShutter)
+            .putBoolean("histogram", settings.histogram)
+            .putBoolean("focusPeaking", settings.focusPeaking)
+            .putBoolean("recordAudio", settings.recordAudio)
+            .putInt("astroSeconds", settings.astroSeconds)
+            .putInt("astroFrames", settings.astroFrames)
             .apply()
     }
 
@@ -118,6 +133,11 @@ class SettingsStore(context: Context) {
         put("rawBitDepth", s.rawBitDepth)
         put("jpegQuality", s.jpegQuality)
         put("vibrationOnShutter", s.vibrationOnShutter)
+        put("histogram", s.histogram)
+        put("focusPeaking", s.focusPeaking)
+        put("recordAudio", s.recordAudio)
+        put("astroSeconds", s.astroSeconds)
+        put("astroFrames", s.astroFrames)
     }.toString(2)
 
     /**
@@ -144,12 +164,45 @@ class SettingsStore(context: Context) {
             rawBitDepth = if (o.optInt("rawBitDepth", d.rawBitDepth) == 10) 10 else 16,
             jpegQuality = o.optInt("jpegQuality", d.jpegQuality).coerceIn(85, 100),
             vibrationOnShutter = o.optBoolean("vibrationOnShutter", d.vibrationOnShutter),
+            histogram = o.optBoolean("histogram", d.histogram),
+            focusPeaking = o.optBoolean("focusPeaking", d.focusPeaking),
+            recordAudio = o.optBoolean("recordAudio", d.recordAudio),
+            astroSeconds = o.optInt("astroSeconds", d.astroSeconds).coerceIn(2, 8),
+            astroFrames = o.optInt("astroFrames", d.astroFrames).coerceIn(4, 10),
         )
     }
 
     /** Puts every setting back to its default. */
+    /** Clears the current settings. Saved presets are kept. */
     fun reset() {
-        prefs.edit().clear().apply()
+        val editor = prefs.edit()
+        prefs.all.keys
+            .filterNot { it == PRESET_INDEX || it.startsWith(PRESET_PREFIX) }
+            .forEach { editor.remove(it) }
+        editor.apply()
+    }
+
+    /** Names of saved presets, sorted. */
+    fun presetNames(): List<String> =
+        prefs.getStringSet(PRESET_INDEX, emptySet()).orEmpty().sorted()
+
+    fun savePreset(name: String, s: Settings) {
+        val names = HashSet(prefs.getStringSet(PRESET_INDEX, emptySet()).orEmpty()).apply { add(name) }
+        prefs.edit()
+            .putString(PRESET_PREFIX + name, exportJson(s))
+            .putStringSet(PRESET_INDEX, names)
+            .apply()
+    }
+
+    fun loadPreset(name: String): Settings? =
+        prefs.getString(PRESET_PREFIX + name, null)?.let { importJson(it) }
+
+    fun deletePreset(name: String) {
+        val names = HashSet(prefs.getStringSet(PRESET_INDEX, emptySet()).orEmpty()).apply { remove(name) }
+        prefs.edit()
+            .remove(PRESET_PREFIX + name)
+            .putStringSet(PRESET_INDEX, names)
+            .apply()
     }
 
     private inline fun <reified T : Enum<T>> enumFrom(o: JSONObject, key: String, fallback: T): T =
@@ -160,3 +213,6 @@ class SettingsStore(context: Context) {
         return runCatching { enumValueOf<T>(stored) }.getOrDefault(fallback)
     }
 }
+
+private const val PRESET_INDEX = "presetNames"
+private const val PRESET_PREFIX = "preset:"

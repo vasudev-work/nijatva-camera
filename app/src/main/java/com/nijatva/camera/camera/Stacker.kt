@@ -22,6 +22,11 @@ import kotlin.math.sqrt
  * Chroma is averaged plainly: colour noise is far less visible than luma noise,
  * and chroma resolution is half in both axes, so the extra bookkeeping buys
  * nothing a viewer would notice.
+ *
+ * Every frame is mean-matched onto the first one with [ExposureMatch] before it
+ * is added, so a burst whose auto-exposure drifted does not average into a
+ * muddy, mid-grey result. The reference pyramid is built once and reused, which
+ * keeps the alignment cost per frame down to one downsample chain.
  */
 class Stacker(private val width: Int, private val height: Int) {
 
@@ -30,7 +35,9 @@ class Stacker(private val width: Int, private val height: Int) {
 
     private val samples = mutableListOf<Sample>()
 
-    private class Sample(val frame: YuvFrame, val dx: Int, val dy: Int)
+    private var referencePyramid: AlignPyramid? = null
+
+    private class Sample(val frame: YuvFrame, val dx: Int, val dy: Int, val gain: Float)
 
     val frameCount: Int get() = samples.size
 
@@ -38,13 +45,18 @@ class Stacker(private val width: Int, private val height: Int) {
         require(frame.width == width && frame.height == height) {
             "Frame size ${frame.width}x${frame.height} does not match stacker $width x $height"
         }
-        val shift = if (samples.isEmpty()) {
-            Align.Shift(0, 0)
-        } else {
-            val reference = samples.first().frame
-            Align.estimate(reference.luma, frame.luma, width, height)
+        if (samples.isEmpty()) {
+            referencePyramid = AlignPyramid.of(frame.luma, width, height)
+            samples.add(Sample(frame, 0, 0, 1f))
+            return
         }
-        samples.add(Sample(frame, shift.dx, shift.dy))
+
+        val reference = samples.first().frame
+        val pyramid = referencePyramid ?: AlignPyramid.of(reference.luma, width, height)
+            .also { referencePyramid = it }
+        val shift = Align.estimate(pyramid, frame.luma)
+        val gain = ExposureMatch.gain(reference.luma, frame.luma, width, height, shift.dx, shift.dy)
+        samples.add(Sample(frame, shift.dx, shift.dy, gain))
     }
 
     /**
@@ -119,7 +131,10 @@ class Stacker(private val width: Int, private val height: Int) {
                 val dstRow = y * width
                 for (x in 0 until width) {
                     val srcX = (x + sample.dx).coerceIn(0, width - 1)
-                    val value = (frame.luma[srcRow + srcX].toInt() and 0xFF).toFloat()
+                    val value = matched(
+                        (frame.luma[srcRow + srcX].toInt() and 0xFF).toFloat(),
+                        sample.gain,
+                    )
                     val i = dstRow + x
 
                     if (mean == null || weight == null) {
@@ -143,8 +158,8 @@ class Stacker(private val width: Int, private val height: Int) {
                 val dstRow = y * chromaWidth
                 for (x in 0 until chromaWidth) {
                     val srcX = ((x * 2 + sample.dx) / 2).coerceIn(0, chromaWidth - 1)
-                    accU[dstRow + x] += (frame.chromaU[srcRow + srcX].toInt() and 0xFF).toFloat()
-                    accV[dstRow + x] += (frame.chromaV[srcRow + srcX].toInt() and 0xFF).toFloat()
+                    accU[dstRow + x] += matchedChroma(frame.chromaU[srcRow + srcX], sample.gain)
+                    accV[dstRow + x] += matchedChroma(frame.chromaV[srcRow + srcX], sample.gain)
                 }
             }
         }
@@ -170,7 +185,10 @@ class Stacker(private val width: Int, private val height: Int) {
                 var x = 0
                 while (x < width) {
                     val srcX = (x + sample.dx).coerceIn(0, width - 1)
-                    val value = (frame.luma[srcRow + srcX].toInt() and 0xFF).toFloat()
+                    val value = matched(
+                        (frame.luma[srcRow + srcX].toInt() and 0xFF).toFloat(),
+                        sample.gain,
+                    )
                     sum += abs(value - mean[y * width + x])
                     counted++
                     x += 7
@@ -180,6 +198,16 @@ class Stacker(private val width: Int, private val height: Int) {
         }
         val deviation = if (counted == 0) 0f else sum / counted
         return (deviation * 3.5f).coerceAtLeast(6f)
+    }
+
+    /** Applies the frame's exposure gain to a luma sample. */
+    private fun matched(value: Float, gain: Float): Float =
+        if (gain == 1.0f) value else (value * gain).coerceIn(0f, 255f)
+
+    /** Applies the gain to a chroma sample, which is offset around 128. */
+    private fun matchedChroma(value: Byte, gain: Float): Float {
+        val centred = (value.toInt() and 0xFF) - 128f
+        return if (gain == 1.0f) centred + 128f else (centred * gain + 128f).coerceIn(0f, 255f)
     }
 
     private fun buildLut(gain: Float, gamma: Float): IntArray {

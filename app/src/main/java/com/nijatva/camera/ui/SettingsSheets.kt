@@ -33,6 +33,7 @@ import kotlin.math.roundToInt
 class SettingsSheet(
     context: Context,
     private var settings: Settings,
+    private val onPresets: (() -> Unit)? = null,
     private val onChange: (Settings) -> Unit,
 ) : Dialog(context, R.style.SheetDialog) {
 
@@ -83,6 +84,10 @@ class SettingsSheet(
 
     private fun buildGeneral() {
         content.addView(sectionLabel("General"))
+
+        onPresets?.let { open ->
+            content.addView(outlinedButton("Presets and backup") { open() })
+        }
 
         content.addView(segmentedRow(
             title = "Flash",
@@ -169,6 +174,61 @@ class SettingsSheet(
             checked = settings.quickAccessControls,
         ) { checked ->
             settings = settings.copy(quickAccessControls = checked)
+            push()
+        })
+
+        val astroSecondsOptions = listOf(2, 4, 8)
+        val astroFrameOptions = listOf(4, 6, 10)
+        content.addView(sectionLabel("Astro"))
+
+        content.addView(segmentedRow(
+            title = "Exposure per frame",
+            subtitle = "Longer shows fainter stars. Needs a steady tripod",
+            options = astroSecondsOptions.map { "$it s" },
+            selected = astroSecondsOptions.indexOf(settings.astroSeconds).coerceAtLeast(0),
+        ) { index ->
+            settings = settings.copy(astroSeconds = astroSecondsOptions[index])
+            push()
+        })
+
+        content.addView(segmentedRow(
+            title = "Frames",
+            subtitle = "More frames mean less noise and a longer shot",
+            options = astroFrameOptions.map { it.toString() },
+            selected = astroFrameOptions.indexOf(settings.astroFrames).coerceAtLeast(0),
+        ) { index ->
+            settings = settings.copy(astroFrames = astroFrameOptions[index])
+            push()
+        })
+
+        content.addView(sectionLabel("Viewfinder analysis"))
+
+        content.addView(switchRow(
+            title = "Histogram",
+            subtitle = "Brightness distribution. Amber bars mark clipped shadows or highlights",
+            checked = settings.histogram,
+        ) { checked ->
+            settings = settings.copy(histogram = checked)
+            push()
+        })
+
+        content.addView(switchRow(
+            title = "Focus peaking",
+            subtitle = "Red edges mark what is in focus",
+            checked = settings.focusPeaking,
+        ) { checked ->
+            settings = settings.copy(focusPeaking = checked)
+            push()
+        })
+
+        content.addView(sectionLabel("Video"))
+
+        content.addView(switchRow(
+            title = "Record audio",
+            subtitle = "Microphone sound in video. Asks for permission the first time",
+            checked = settings.recordAudio,
+        ) { checked ->
+            settings = settings.copy(recordAudio = checked)
             push()
         })
 
