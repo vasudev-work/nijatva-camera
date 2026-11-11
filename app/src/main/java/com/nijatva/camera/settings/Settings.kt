@@ -145,6 +145,8 @@ class SettingsStore(context: Context) {
      * defaults, and out-of-range numbers are clamped. Returns null only when the
      * text is not JSON at all.
      */
+    fun importJsonOrNull(text: String): Settings? = importJson(text)
+
     fun importJson(text: String): Settings? {
         val o = runCatching { JSONObject(text) }.getOrNull() ?: return null
         val d = Settings()

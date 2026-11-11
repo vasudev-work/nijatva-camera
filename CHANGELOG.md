@@ -82,17 +82,35 @@ starting points.
 - **Presets and backup.** "Presets and backup" in the settings sheet saves,
   loads and deletes named presets, shares the settings as JSON, and resets to
   defaults. Reset keeps saved presets.
-- Importing a settings JSON file is not wired to a file picker yet. The store
-  supports it through `importJson`. (Done in Phase 4, part 1.)
 
-## Phase 4, part 1: real alignment and exposure matching
+## Phase 3, part 3: settings import
+
+- **Import settings from a JSON file** in "Presets and backup". The system file
+  picker opens, the file is read (up to 64 KB), and the settings are applied and
+  saved. A file that is not a settings file is refused with a message.
+
+## Colour grading for merged photos
+
+- **`grade/ColorGrade.kt`** runs on Night, HDR and Astro output before it is saved.
+  Steps: grey-world white balance (gains clamped to 0.7 to 1.4), a tone curve with
+  a soft highlight shoulder, midtone local contrast from a blur on a 4x downsampled
+  plane, and a saturation boost (1.08) applied to chroma only.
+- Memory: the blur runs on a quarter-size luma plane, so a 12 MP frame does not
+  allocate several full-size float planes.
+- Single-frame JPEGs from the camera are not regraded, since the HAL already
+  processes them.
+- Look values are starting points. They were chosen by reasoning, not by looking
+  at real photos, so tune them on a few real shots before trusting them.
+
+## Phase 4: real alignment and exposure matching
 
 - **Coarse-to-fine alignment.** `camera/Align.kt` now searches three pyramid
-  levels (1/32, 1/16, 1/8) instead of one. The coarse level reaches ±96 pixels of
-  full-resolution drift, so a bigger handshake is registered instead of clipped,
-  and every level is a box average rather than a point sample, which stops
-  brickwork, foliage and fabric from aliasing into a false match. `AlignPyramid`
-  builds the reference levels once per burst and `Stacker` reuses them.
+  levels (1/32, 1/16, 1/8) instead of one. The coarse level reaches +/-96 pixels
+  of full-resolution drift, so a bigger handshake is registered instead of
+  clipped, and every level is a box average rather than a point sample, which
+  stops brickwork, foliage and fabric from aliasing into a false match.
+  `AlignPyramid` builds the reference levels once per burst and `Stacker` reuses
+  them.
 - **Per-frame exposure match.** `camera/ExposureMatch.kt` measures the mid-tone
   mean ratio over the overlap, after the alignment shift, and scales each frame
   onto the first - luma and chroma - before it is fused. Auto-exposure drift no
@@ -101,13 +119,9 @@ starting points.
 - **Panorama seam brightness.** `process/PanoramaStitcher.kt` matches every
   frame's exposure to the first one, so panning out of shade or past a window no
   longer leaves a hard step at the seam.
-- **Import settings from a file.** "Presets and backup" > "Import settings from
-  file" opens the system file picker and applies a JSON backup through
-  `SettingsStore.importJson`. A file that does not parse as settings is refused
-  with a message instead of half-applying.
 - **Tests.** `AlignTest` covers shift recovery at both small and large drift,
-  identical frames and the tiny-frame fallback; `ExposureMatchTest` covers ratio
+  identical frames and the small-frame fallback; `ExposureMatchTest` covers ratio
   recovery in both directions, clipped-pixel handling, the no-overlap fallback
   and flat frames.
 
-Still not modelled: rotation between frames, GPU fusion, zero shutter lag.
+Not modelled yet: rotation between frames, GPU fusion, zero shutter lag.

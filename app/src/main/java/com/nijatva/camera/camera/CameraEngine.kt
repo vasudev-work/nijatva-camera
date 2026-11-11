@@ -497,14 +497,18 @@ class CameraEngine(
                 // upright here. Its pixels then look right in every gallery app.
                 val upright = Orientation.rotate(raw, jpegRotation())
                 if (upright !== raw) raw.recycle()
+                // Colour and tone for merged output only. Single-frame JPEGs from the
+                // camera already carry the HAL's own processing, so they are left alone.
+                val graded = com.nijatva.camera.grade.ColorGrade.applyTo(upright)
                 val uri = saver.saveJpeg(
-                    upright,
+                    graded,
                     quality = jpegQuality,
                     label = capturedMode.label.uppercase(),
                     mirror = shouldMirror(),
                     wideGamut = wideColour,
                 )
                 saver.tagMerged(uri)
+                graded.recycle()
                 upright.recycle()
                 busy = false
                 handler.post { callback.onSaved(uri, "${capturedMode.label}: ${captured.size} frames merged") }

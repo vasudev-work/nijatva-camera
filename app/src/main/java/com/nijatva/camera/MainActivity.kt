@@ -101,6 +101,11 @@ class MainActivity : AppCompatActivity(), CameraEngine.Callback {
     private var ringColor = 0
     private var audioAsked = false
     private var movedSince = 0L
+
+    /** Opens a settings JSON file from the system picker. */
+    private val importLauncher = registerForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.OpenDocument()
+    ) { uri -> if (uri != null) importSettings(uri) }
     private lateinit var histogramView: com.nijatva.camera.ui.HistogramView
     private lateinit var peakingOverlay: android.widget.ImageView
     private var wasRecording = false
@@ -736,18 +741,18 @@ class MainActivity : AppCompatActivity(), CameraEngine.Callback {
         }
     }
 
-    /** Presets and backup. Save or load named setups, share the JSON, or reset to defaults. */
+    /** Presets and backup. Save or load named setups, share or import JSON, or reset to defaults. */
     private fun showPresets() {
         val names = store.presetNames()
         val items = mutableListOf(
             "Save current settings as a preset",
             "Share settings as JSON",
-            "Import settings from file",
+            "Import settings from a JSON file",
             "Reset to defaults",
         )
         names.forEach { items += "Load: $it" }
         names.forEach { items += "Delete: $it" }
-        val fixed = 4
+        val loadBase = 4
 
         AlertDialog.Builder(this)
             .setTitle("Presets and backup")
@@ -755,15 +760,15 @@ class MainActivity : AppCompatActivity(), CameraEngine.Callback {
                 when {
                     which == 0 -> askPresetName()
                     which == 1 -> shareSettings()
-                    which == 2 -> pickSettingsFile()
+                    which == 2 -> importLauncher.launch(arrayOf("application/json", "text/plain"))
                     which == 3 -> {
                         store.reset()
                         settings = Settings()
                         applySettings()
                         Toast.makeText(this, "Settings reset to defaults", Toast.LENGTH_SHORT).show()
                     }
-                    which - fixed < names.size -> {
-                        val name = names[which - fixed]
+                    which - loadBase < names.size -> {
+                        val name = names[which - loadBase]
                         store.loadPreset(name)?.let {
                             settings = it
                             store.save(it)
@@ -772,7 +777,7 @@ class MainActivity : AppCompatActivity(), CameraEngine.Callback {
                         } ?: Toast.makeText(this, "Preset $name could not be read", Toast.LENGTH_SHORT).show()
                     }
                     else -> {
-                        val name = names[which - fixed - names.size]
+                        val name = names[which - loadBase - names.size]
                         store.deletePreset(name)
                         Toast.makeText(this, "Deleted $name", Toast.LENGTH_SHORT).show()
                     }
@@ -780,6 +785,32 @@ class MainActivity : AppCompatActivity(), CameraEngine.Callback {
             }
             .setNegativeButton("Close", null)
             .show()
+    }
+
+    /**
+     * Reads a settings file chosen by the user and applies it. Files over 64 KB are
+     * refused, since a real settings file is a few hundred bytes.
+     */
+    private fun importSettings(uri: Uri) {
+        val text = try {
+            contentResolver.openInputStream(uri)?.bufferedReader()?.use { reader ->
+                val buffer = CharArray(64 * 1024 + 1)
+                val read = reader.read(buffer)
+                if (read > 64 * 1024) null else String(buffer, 0, maxOf(read, 0))
+            }
+        } catch (_: Exception) {
+            null
+        }
+
+        val imported = text?.let { store.importJsonOrNull(it) }
+        if (imported == null) {
+            Toast.makeText(this, "That file is not a Nijatva settings file", Toast.LENGTH_LONG).show()
+            return
+        }
+        settings = imported
+        store.save(imported)
+        applySettings()
+        Toast.makeText(this, "Settings imported", Toast.LENGTH_SHORT).show()
     }
 
     private fun askPresetName() {
@@ -808,49 +839,6 @@ class MainActivity : AppCompatActivity(), CameraEngine.Callback {
             putExtra(android.content.Intent.EXTRA_TEXT, store.exportJson(settings))
         }
         startActivity(android.content.Intent.createChooser(send, "Share settings"))
-    }
-
-    /**
-     * Opens the system file picker for a settings JSON. The picker hands back a
-     * content URI, so no storage permission is needed and the file can live
-     * anywhere the user can see.
-     */
-    private fun pickSettingsFile() {
-        val open = android.content.Intent(android.content.Intent.ACTION_OPEN_DOCUMENT).apply {
-            addCategory(android.content.Intent.CATEGORY_OPENABLE)
-            type = "*/*"
-            putExtra(
-                android.content.Intent.EXTRA_MIME_TYPES,
-                arrayOf("application/json", "text/plain", "application/octet-stream"),
-            )
-        }
-        startActivityForResult(
-            android.content.Intent.createChooser(open, "Import settings"),
-            REQUEST_IMPORT,
-        )
-    }
-
-    /** Reads the picked file, and applies it only if it parses as settings JSON. */
-    private fun importSettingsFrom(uri: Uri) {
-        val text = runCatching {
-            contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
-        }.getOrNull()
-
-        if (text.isNullOrBlank()) {
-            Toast.makeText(this, "That file could not be read", Toast.LENGTH_SHORT).show()
-            return
-        }
-
-        val imported = store.importJson(text)
-        if (imported == null) {
-            Toast.makeText(this, "That file is not a settings backup", Toast.LENGTH_SHORT).show()
-            return
-        }
-
-        settings = imported
-        store.save(imported)
-        applySettings()
-        Toast.makeText(this, "Settings imported", Toast.LENGTH_SHORT).show()
     }
 
     private fun hasAudioPermission(): Boolean =
@@ -1034,13 +1022,6 @@ class MainActivity : AppCompatActivity(), CameraEngine.Callback {
 
     // ---------------------------------------------------------------- plumbing
 
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: android.content.Intent?) {
-        super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode != REQUEST_IMPORT) return
-        if (resultCode != android.app.Activity.RESULT_OK) return
-        data?.data?.let { importSettingsFrom(it) }
-    }
-
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == REQUEST_CAMERA) {
@@ -1064,7 +1045,6 @@ class MainActivity : AppCompatActivity(), CameraEngine.Callback {
     private companion object {
         const val REQUEST_CAMERA = 101
         const val REQUEST_AUDIO = 102
-        const val REQUEST_IMPORT = 103
         const val PANO_STEP_DEGREES = 8f
         const val PANO_MAX_FRAMES = 24
     }
