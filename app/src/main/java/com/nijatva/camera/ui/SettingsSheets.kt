@@ -89,40 +89,40 @@ class SettingsSheet(
             content.addView(outlinedButton("Presets and backup") { open() })
         }
 
-        content.addView(segmentedRow(
+        content.addView(iconSegmentedRow(
             title = "Flash",
             subtitle = "Torch is toggled separately in the viewfinder",
-            options = FlashMode.values().map { it.label },
+            kinds = listOf(IconButton.Kind.FLASH_OFF, IconButton.Kind.FLASH_AUTO, IconButton.Kind.FLASH_ON),
             selected = settings.flash.ordinal,
         ) { index ->
             settings = settings.copy(flash = FlashMode.values()[index])
             push()
         })
 
-        content.addView(segmentedRow(
+        content.addView(iconSegmentedRow(
             title = "HDR+",
             subtitle = "Enhanced brackets three exposures instead of one",
-            options = HdrMode.values().map { it.label },
+            kinds = listOf(IconButton.Kind.HDR_OFF, IconButton.Kind.HDR, IconButton.Kind.HDR_ENHANCED),
             selected = settings.hdr.ordinal,
         ) { index ->
             settings = settings.copy(hdr = HdrMode.values()[index])
             push()
         })
 
-        content.addView(segmentedRow(
+        content.addView(iconSegmentedRow(
             title = "Timer",
             subtitle = "Countdown before the shutter fires",
-            options = TimerDelay.values().map { it.label },
+            kinds = listOf(IconButton.Kind.TIMER_OFF, IconButton.Kind.TIMER_3, IconButton.Kind.TIMER_10),
             selected = settings.timer.ordinal,
         ) { index ->
             settings = settings.copy(timer = TimerDelay.values()[index])
             push()
         })
 
-        content.addView(segmentedRow(
+        content.addView(iconSegmentedRow(
             title = "Ratio",
             subtitle = settings.ratio.subtitle,
-            options = Ratio.values().map { it.label },
+            kinds = listOf(IconButton.Kind.RATIO_4_3, IconButton.Kind.RATIO_16_9),
             selected = settings.ratio.ordinal,
         ) { index ->
             settings = settings.copy(ratio = Ratio.values()[index])
@@ -352,6 +352,52 @@ class SettingsSheet(
         })
         row.setOnClickListener { onClick() }
         row.isClickable = true
+        return row
+    }
+
+    /**
+     * A settings row in the reference style: label and explanation on the left,
+     * a row of round icon buttons on the right, the chosen one filled.
+     */
+    private fun iconSegmentedRow(
+        title: String,
+        subtitle: String,
+        kinds: List<IconButton.Kind>,
+        selected: Int,
+        onSelect: (Int) -> Unit,
+    ): View {
+        val row = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, dp(10), 0, dp(10))
+        }
+        val text = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
+        text.addView(TextView(context).apply {
+            this.text = title
+            setTextColor(Color.WHITE)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+        })
+        if (subtitle.isNotEmpty()) {
+            text.addView(TextView(context).apply {
+                this.text = subtitle
+                setTextColor(Color.parseColor("#9AA3AD"))
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 10.5f)
+                setPadding(0, dp(2), dp(10), 0)
+            })
+        }
+        row.addView(text, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+
+        val buttons = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL }
+        kinds.forEachIndexed { index, kind ->
+            buttons.addView(IconButton(context).apply {
+                this.kind = kind
+                active = index == selected
+                setOnClickListener { onSelect(index) }
+            }, LinearLayout.LayoutParams(dp(40), dp(40)).apply {
+                if (index > 0) leftMargin = dp(6)
+            })
+        }
+        row.addView(buttons)
         return row
     }
 

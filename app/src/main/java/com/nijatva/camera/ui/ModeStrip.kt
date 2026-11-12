@@ -2,6 +2,7 @@ package com.nijatva.camera.ui
 
 import android.content.Context
 import android.graphics.Color
+import android.graphics.drawable.GradientDrawable
 import android.graphics.Typeface
 import android.os.Handler
 import android.os.Looper
@@ -74,20 +75,26 @@ class ModeStrip(context: Context) : HorizontalScrollView(context) {
 
     fun setSelected(mode: Mode) {
         selected = mode
-        chips.forEach { (chipMode, chip) ->
-            val chosen = chipMode == mode
-            chip.setTextColor(if (chosen) ACCENT else Color.WHITE)
-            chip.alpha = if (chosen) 1f else 0.55f
-        }
+        chips.forEach { (chipMode, chip) -> styleChip(chip, chipMode == mode) }
         chips.firstOrNull { it.first == mode }?.second?.let { scrollIntoCentre(it) }
     }
 
     /** MORE is highlighted while the grid is open. */
     fun setMoreHighlighted(highlighted: Boolean) {
-        moreChip?.let { chip ->
-            chip.setTextColor(if (highlighted) ACCENT else Color.WHITE)
-            chip.alpha = if (highlighted) 1f else 0.55f
+        moreChip?.let { chip -> styleChip(chip, highlighted) }
+    }
+
+    /**
+     * The reference marks the current mode with a filled pill, not a coloured
+     * word: a pill survives a busy viewfinder behind it, coloured text does not.
+     */
+    private fun styleChip(chip: TextView, chosen: Boolean) {
+        chip.background = GradientDrawable().apply {
+            cornerRadius = dp(18).toFloat()
+            setColor(if (chosen) PILL else Color.TRANSPARENT)
         }
+        chip.setTextColor(if (chosen) Color.parseColor("#101418") else Color.WHITE)
+        chip.alpha = if (chosen) 1f else 0.62f
     }
 
     private fun chip(label: String): TextView = TextView(context).apply {
@@ -98,7 +105,7 @@ class ModeStrip(context: Context) : HorizontalScrollView(context) {
         typeface = Typeface.create("sans-serif", Typeface.BOLD)
         letterSpacing = 0.1f
         gravity = Gravity.CENTER
-        setPadding(dp(13), dp(10), dp(13), dp(10))
+        setPadding(dp(16), dp(9), dp(16), dp(9))
         isClickable = true
     }
 
@@ -135,6 +142,6 @@ class ModeStrip(context: Context) : HorizontalScrollView(context) {
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).roundToInt()
 
     private companion object {
-        val ACCENT: Int = Color.parseColor("#FFB020")
+        val PILL: Int = Color.parseColor("#C3D0F5")
     }
 }

@@ -73,6 +73,8 @@ class MainActivity : AppCompatActivity(), CameraEngine.Callback {
     private lateinit var controls: LinearLayout
     private lateinit var rightHost: FrameLayout
     private lateinit var flipButton: IconButton
+    private lateinit var cameraToggle: IconButton
+    private lateinit var videoToggle: IconButton
     private lateinit var proPanel: ProPanel
     private lateinit var topBar: LinearLayout
     private lateinit var bottomBar: LinearLayout
@@ -374,6 +376,46 @@ class MainActivity : AppCompatActivity(), CameraEngine.Callback {
             ViewGroup.LayoutParams.MATCH_PARENT, dp(96)
         ))
 
+        // ---- utility row: settings gear, and the photo/video switch
+        val utilityRow = FrameLayout(this)
+        utilityRow.addView(IconButton(this).apply {
+            kind = IconButton.Kind.GEAR
+            setOnClickListener { openSettings() }
+        }, FrameLayout.LayoutParams(dp(44), dp(44), Gravity.START or Gravity.CENTER_VERTICAL).apply {
+            leftMargin = dp(8)
+        })
+
+        val togglePill = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            background = GradientDrawable().apply {
+                cornerRadius = dp(24).toFloat()
+                setColor(Color.argb(60, 255, 255, 255))
+            }
+            setPadding(dp(4), dp(4), dp(4), dp(4))
+        }
+        cameraToggle = IconButton(this).apply {
+            kind = IconButton.Kind.CAMERA
+            active = true
+            setOnClickListener { selectMode(Mode.PHOTO) }
+        }
+        videoToggle = IconButton(this).apply {
+            kind = IconButton.Kind.VIDEO
+            setOnClickListener { selectMode(Mode.VIDEO) }
+        }
+        togglePill.addView(cameraToggle, LinearLayout.LayoutParams(dp(40), dp(40)))
+        togglePill.addView(videoToggle, LinearLayout.LayoutParams(dp(40), dp(40)))
+
+        // Lite has no video mode, so the switch would be a dead control.
+        if (BuildConfig.LITE) togglePill.visibility = View.GONE
+        utilityRow.addView(togglePill, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+            Gravity.END or Gravity.CENTER_VERTICAL
+        ).apply { rightMargin = dp(8) })
+        bottomBar.addView(utilityRow, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, dp(52)
+        ))
+
         root.addView(bottomBar, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM
         ))
@@ -584,6 +626,8 @@ class MainActivity : AppCompatActivity(), CameraEngine.Callback {
         proPanel.visibility = if (mode == Mode.PRO) View.VISIBLE else View.GONE
 
         modeStrip.setSelected(mode)
+        cameraToggle.active = mode != Mode.VIDEO
+        videoToggle.active = mode == Mode.VIDEO
         modesGrid.setSelected(mode)
         statusStrip.visibility = if (mode == Mode.PRO) View.VISIBLE else View.GONE
         // Analysis only runs in Photo and Pro, so hide its overlays in other modes.
