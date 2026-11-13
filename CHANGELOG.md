@@ -137,3 +137,25 @@ Not modelled yet: rotation between frames, GPU fusion, zero shutter lag.
   `width * height * 2` bytes - and returns success. The align, merge, demosaic,
   white balance, colour matrix, tone map and JPEG encode stages are still a TODO
   in `processor.cpp`, so nothing calls the module from a capture mode yet.
+
+## Native pipeline, first working version
+
+- **Stages 0-8b in C++.** `pipeline_core.cpp` now normalises each RAW frame,
+  picks the sharpest of the first three as the reference, aligns the burst on a
+  half-resolution green pyramid (four levels, L2 coarse, L1 fine), matches
+  exposure over the overlap, merges with a noise-model inverse-variance average
+  and a 3-sigma ghost guard, demosaics, applies white balance and the device
+  colour matrix, runs the Hable curve and writes a 16-bit TIFF.
+- **Metadata crosses the JNI boundary once.** `RawPipeline.kt` packs 19 floats per
+  frame (ISO, exposure, WB gains, black/white level, noise A and B, stride, the
+  3x3 colour matrix) and the native side returns shifts, exposure ratios and
+  per-stage timings.
+- **Mid-grey fix.** Hable's curve lifts 18% scene-linear to 0.505 in sRGB, about
+  half a stop bright. A gamma of 1.12 on the curve's input puts an 18% grey card
+  at 0.460, where it belongs, and leaves white at white.
+- **Host tests.** `tests/synthetic_test.cpp` recovers six known shifts exactly and
+  measures burst noise at 0.42x the single-frame noise (ideal 0.41 for six
+  frames); `tests/grey_card_test.cpp` checks neutrality and the 0.46 mid-grey.
+- Still open: the frequency-domain merge, better demosaic, local contrast and
+  sharpening in native, a measured noise model, and a capture mode that calls the
+  pipeline.
