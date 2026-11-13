@@ -16,4 +16,37 @@
     <string name="zoom_two">2x</string>
     <string name="stop_recording_first">Stop recording first</string>
     <string name="status_recording">REC %1$s</string>
+    <!-- Appearance and Developer -->
+    <string name="appearance_title">APPEARANCE</string>
+    <string name="appearance_theme">Theme</string>
+    <string name="appearance_accent">Accent colour</string>
+    <string name="appearance_note">Saved on this device only. Nothing about your choice leaves the phone.</string>
+    <string name="theme_system">System</string>
+    <string name="theme_dark">Dark</string>
+    <string name="theme_light">Light</string>
+    <string name="theme_black">Black</string>
+    <string name="accent_green">Green</string>
+    <string name="accent_saffron">Saffron</string>
+    <string name="accent_indigo">Indigo</string>
+    <string name="menu_settings">Settings</string>
+    <string name="menu_appearance">Appearance</string>
+    <string name="menu_developer">Developer</string>
+    <string name="developer_title">Developer</string>
+    <string name="developer_name">Vasudev Dangaya</string>
+    <string name="developer_handle">@vasudev-work</string>
+    <string name="developer_bio_one">Builds Android apps in Kotlin and Jetpack Compose, without Google Play Services.</string>
+    <string name="developer_bio_two">Nijatva is the current project: 24 small apps, no accounts, no ads, no analytics.</string>
+    <string name="developer_repos">28</string>
+    <string name="developer_repos_label">Repositories</string>
+    <string name="developer_apps">24</string>
+    <string name="developer_apps_label">Apps planned</string>
+    <string name="developer_with_code">2</string>
+    <string name="developer_with_code_label">With code today</string>
+    <string name="developer_country">India</string>
+    <string name="developer_site">vasudev-work.github.io</string>
+    <string name="developer_email">Vasudev.work@rediffmail.com</string>
+    <string name="developer_view_github">View GitHub Profile</string>
+    <string name="developer_maintains">Maintains</string>
+    <string name="developer_plus_more">+22</string>
+    <string name="developer_footnote">2 of the 24 apps have a repository today; the other 22 are planned and listed on the apps page. Figures read from GitHub on 13 November 2026.</string>
 </resources>

@@ -53,6 +53,8 @@ data class Settings(
     val recordAudio: Boolean = true,
     val astroSeconds: Int = 4,
     val astroFrames: Int = 6,
+    val theme: ThemeChoice = ThemeChoice.BLACK,
+    val accent: AccentChoice = AccentChoice.SAFFRON,
 )
 
 /**
@@ -88,6 +90,8 @@ class SettingsStore(context: Context) {
             recordAudio = prefs.getBoolean("recordAudio", defaults.recordAudio),
             astroSeconds = prefs.getInt("astroSeconds", defaults.astroSeconds).coerceIn(2, 8),
             astroFrames = prefs.getInt("astroFrames", defaults.astroFrames).coerceIn(4, 10),
+            theme = readEnum("theme", defaults.theme),
+            accent = readEnum("accent", defaults.accent),
         )
     }
 
@@ -113,6 +117,8 @@ class SettingsStore(context: Context) {
             .putBoolean("recordAudio", settings.recordAudio)
             .putInt("astroSeconds", settings.astroSeconds)
             .putInt("astroFrames", settings.astroFrames)
+            .putString("theme", settings.theme.name)
+            .putString("accent", settings.accent.name)
             .apply()
     }
 
@@ -138,6 +144,8 @@ class SettingsStore(context: Context) {
         put("recordAudio", s.recordAudio)
         put("astroSeconds", s.astroSeconds)
         put("astroFrames", s.astroFrames)
+        put("theme", s.theme.name)
+        put("accent", s.accent.name)
     }.toString(2)
 
     /**
@@ -171,6 +179,8 @@ class SettingsStore(context: Context) {
             recordAudio = o.optBoolean("recordAudio", d.recordAudio),
             astroSeconds = o.optInt("astroSeconds", d.astroSeconds).coerceIn(2, 8),
             astroFrames = o.optInt("astroFrames", d.astroFrames).coerceIn(4, 10),
+            theme = enumFrom(o, "theme", d.theme),
+            accent = enumFrom(o, "accent", d.accent),
         )
     }
 

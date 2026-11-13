@@ -70,6 +70,6 @@ class ZoomPill(context: Context) : LinearLayout(context) {
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).roundToInt()
 
     private companion object {
-        val ACCENT: Int = Color.parseColor("#FFB020")
+        val ACCENT: Int get() = Palette.accent
     }
 }

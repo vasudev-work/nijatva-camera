@@ -40,7 +40,12 @@ import com.nijatva.camera.settings.GridType
 import com.nijatva.camera.settings.Ratio
 import com.nijatva.camera.settings.Settings
 import com.nijatva.camera.settings.SettingsStore
+import com.nijatva.camera.settings.AccentChoice
+import com.nijatva.camera.settings.ThemeChoice
+import com.nijatva.camera.ui.AppearanceSheet
 import com.nijatva.camera.ui.AutoFitSurfaceView
+import com.nijatva.camera.ui.DeveloperPage
+import com.nijatva.camera.ui.Palette
 import com.nijatva.camera.ui.GridOverlay
 import com.nijatva.camera.ui.IconButton
 import com.nijatva.camera.ui.SettingsSheet
@@ -70,6 +75,7 @@ class MainActivity : AppCompatActivity(), CameraEngine.Callback {
     private lateinit var modeStrip: com.nijatva.camera.ui.ModeStrip
     private lateinit var zoomPill: com.nijatva.camera.ui.ZoomPill
     private lateinit var modesGrid: com.nijatva.camera.ui.ModesGrid
+    private lateinit var developerPage: DeveloperPage
     private lateinit var controls: LinearLayout
     private lateinit var rightHost: FrameLayout
     private lateinit var flipButton: IconButton
@@ -126,6 +132,7 @@ class MainActivity : AppCompatActivity(), CameraEngine.Callback {
 
         store = SettingsStore(this)
         settings = store.load()
+        Palette.apply(settings.theme, settings.accent, isSystemDark())
 
         buildUi()
 
@@ -218,7 +225,7 @@ class MainActivity : AppCompatActivity(), CameraEngine.Callback {
 
     private fun buildUi() {
         val root = FrameLayout(this)
-        root.setBackgroundColor(Color.BLACK)
+        root.setBackgroundColor(Palette.background)
         // The preview is deliberately larger than the screen in cover mode, so
         // the parent has to crop it rather than let it spill.
         root.clipChildren = true
@@ -269,7 +276,7 @@ class MainActivity : AppCompatActivity(), CameraEngine.Callback {
         topBar.addView(View(this), LinearLayout.LayoutParams(0, dp(1), 1f))
         menuButton = IconButton(this).apply {
             kind = IconButton.Kind.MENU
-            setOnClickListener { openSettings() }
+            setOnClickListener { openMenu() }
         }
         topBar.addView(menuButton)
         root.addView(topBar, FrameLayout.LayoutParams(
@@ -440,6 +447,13 @@ class MainActivity : AppCompatActivity(), CameraEngine.Callback {
             columns = if (isTablet()) 4 else 3,
         )
         root.addView(modesGrid, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
+        ))
+
+        developerPage = DeveloperPage(this).apply {
+            onClose = { closeDeveloper() }
+        }
+        root.addView(developerPage, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
         ))
 
@@ -747,6 +761,66 @@ class MainActivity : AppCompatActivity(), CameraEngine.Callback {
         }
     }
 
+    /**
+     * The hamburger opens a short menu, the way the site's Menu button does:
+     * Settings for capture behaviour, Appearance for theme and accent, Developer
+     * for the profile page.
+     */
+    private fun openMenu() {
+        val items = arrayOf(
+            getString(R.string.menu_settings),
+            getString(R.string.menu_appearance),
+            getString(R.string.menu_developer),
+        )
+        AlertDialog.Builder(this)
+            .setItems(items) { _, which ->
+                when (which) {
+                    0 -> openSettings()
+                    1 -> openAppearance()
+                    2 -> openDeveloper()
+                }
+            }
+            .show()
+    }
+
+    private fun openAppearance() {
+        val before = settings
+        AppearanceSheet(this, settings) { updated ->
+            settings = updated
+            store.save(updated)
+            Palette.apply(updated.theme, updated.accent, isSystemDark())
+            if (updated.theme != before.theme) {
+                // Surfaces are built once, so a theme change rebuilds the chrome.
+                // The camera restarts with it; that is the honest cost of a
+                // theme switch, and it happens once per switch.
+                recreate()
+            } else {
+                refreshAccent()
+            }
+        }.show()
+    }
+
+    /** Accent-only change: recolour what is already on screen. */
+    private fun refreshAccent() {
+        modeStrip.setSelected(currentMode)
+        modesGrid.setSelected(currentMode)
+        zoomPill.select(if (engine.currentSettings.zoom >= 1.6f) 2f else 1f)
+        ringColor = 0
+        updateShutterRing()
+    }
+
+    private fun openDeveloper() {
+        developerPage.open()
+    }
+
+    private fun closeDeveloper() {
+        developerPage.close()
+    }
+
+    private fun isSystemDark(): Boolean =
+        (resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
+            android.content.res.Configuration.UI_MODE_NIGHT_YES
+
     private fun openSettings() {
         SettingsSheet(this, settings, onPresets = { showPresets() }) { updated ->
             settings = updated
@@ -1001,7 +1075,7 @@ class MainActivity : AppCompatActivity(), CameraEngine.Callback {
         val color = when {
             engine.recording -> Color.parseColor("#FF3B30")
             (currentMode == Mode.NIGHT || currentMode == Mode.ASTRO) && gyro.isAvailable ->
-                if (stillness.isStill()) Color.parseColor("#34C759") else Color.parseColor("#FFB020")
+                if (stillness.isStill()) Color.parseColor("#34C759") else Palette.accent
             else -> Color.argb(150, 255, 255, 255)
         }
         if (color == ringColor) return
