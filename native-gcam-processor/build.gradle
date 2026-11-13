@@ -1,0 +1,41 @@
+plugins {
+    id 'com.android.library'
+    id 'org.jetbrains.kotlin.android'
+}
+
+android {
+    namespace 'com.nijatva.camera.processor'
+    compileSdk 35
+    buildToolsVersion '35.0.0'
+    ndkVersion '27.2.12479018'
+
+    defaultConfig {
+        minSdk 29
+        externalNativeBuild {
+            cmake {
+                cppFlags '-std=c++17'
+                // 64-bit only: the app ships arm64 and x86_64, and the RAW
+                // pipeline would not fit a 32-bit address space anyway.
+                abiFilters 'arm64-v8a', 'x86_64'
+            }
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path 'src/main/cpp/CMakeLists.txt'
+            version '3.22.1'
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    kotlinOptions {
+        jvmTarget = '17'
+    }
+}
+
+dependencies {
+}

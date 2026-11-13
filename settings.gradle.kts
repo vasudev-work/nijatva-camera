@@ -15,3 +15,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "NijatvaCamera"
 include(":app")
+include(":native-gcam-processor")

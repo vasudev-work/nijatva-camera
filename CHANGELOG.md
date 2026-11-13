@@ -125,3 +125,15 @@ starting points.
   and flat frames.
 
 Not modelled yet: rotation between frames, GPU fusion, zero shutter lag.
+
+## Native RAW processor module
+
+- **`native-gcam-processor`.** A new library module with a JNI bridge
+  (`GcamEngine`), Camera2 RAW capture helpers (`RawCaptureSetup`,
+  `RawCameraController`) and a DNG writer (`DngSaver`). CMake builds
+  `libgcamprocessor.so` for arm64-v8a and x86_64; the app depends on the module,
+  so both build together.
+- The C++ side validates the incoming RAW frames - direct buffers, capacity for
+  `width * height * 2` bytes - and returns success. The align, merge, demosaic,
+  white balance, colour matrix, tone map and JPEG encode stages are still a TODO
+  in `processor.cpp`, so nothing calls the module from a capture mode yet.
