@@ -140,6 +140,9 @@ class CameraEngine(
     /** JPEG quality used for merged, stitched and DNG-companion output. */
     var jpegQuality: Int = 97
 
+    /** Stamp "Shot on Nijatva" in the corner of merged photos. */
+    var watermark: Boolean = false
+
     @Volatile
     private var busy = false
 
@@ -506,6 +509,7 @@ class CameraEngine(
                     label = capturedMode.label.uppercase(),
                     mirror = shouldMirror(),
                     wideGamut = wideColour,
+                    watermark = if (watermark) "Shot on Nijatva" else null,
                 )
                 saver.tagMerged(uri)
                 graded.recycle()

@@ -113,6 +113,9 @@ class MainActivity : AppCompatActivity(), CameraEngine.Callback {
     private var ringColor = 0
     private var audioAsked = false
     private var movedSince = 0L
+    private var swipeStartY = 0f
+    private var swipeStartEv = 0
+    private var swipingExposure = false
 
     /** Opens a settings JSON file from the system picker. */
     private val importLauncher = registerForActivityResult(
@@ -523,10 +526,55 @@ class MainActivity : AppCompatActivity(), CameraEngine.Callback {
 
         preview.setOnTouchListener { view, event ->
             scaleDetector.onTouchEvent(event)
-            tapDetector.onTouchEvent(event)
-            if (event.actionMasked == MotionEvent.ACTION_UP) view.performClick()
+            // A two-finger gesture is a zoom, so the one-finger exposure swipe
+            // stands down while the scale detector owns the touch.
+            if (!scaleDetector.isInProgress) trackExposureSwipe(event)
+            if (!swipingExposure) tapDetector.onTouchEvent(event)
+            if (event.actionMasked == MotionEvent.ACTION_UP ||
+                event.actionMasked == MotionEvent.ACTION_CANCEL
+            ) {
+                view.performClick()
+                swipingExposure = false
+            }
             true
         }
+    }
+
+    /**
+     * Swipe up or down anywhere on the preview to move exposure compensation.
+     *
+     * One step per [EXPOSURE_SWIPE_STEP_DP] of travel, clamped to the range the
+     * camera reports, and it only takes over after the finger has moved past a
+     * threshold, so a tap still focuses and a small wobble does not shift the
+     * exposure.
+     */
+    private fun trackExposureSwipe(event: MotionEvent) {
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                swipeStartY = event.y
+                swipeStartEv = engine.currentSettings.evSteps ?: 0
+                swipingExposure = false
+            }
+
+            MotionEvent.ACTION_MOVE -> {
+                if (event.pointerCount != 1) return
+                val travel = swipeStartY - event.y  // up is brighter, like the EV dial
+                if (!swipingExposure && abs(travel) > dp(24)) swipingExposure = true
+                if (swipingExposure) {
+                    val steps = (travel / dp(EXPOSURE_SWIPE_STEP_DP)).roundToInt()
+                    setExposureCompensation(swipeStartEv + steps)
+                }
+            }
+        }
+    }
+
+    private fun setExposureCompensation(steps: Int) {
+        val range = caps?.evRange ?: return
+        val clamped = steps.coerceIn(range.lower, range.upper)
+        if (engine.currentSettings.evSteps == clamped) return
+        engine.updateSettings { it.withEv(clamped) }
+        val sign = if (clamped > 0) "+" else ""
+        statusText.text = "Exposure $sign$clamped"
     }
 
     private fun applyInsets(root: View) {
@@ -861,6 +909,7 @@ class MainActivity : AppCompatActivity(), CameraEngine.Callback {
         engine.wideColour = settings.wideColour
         engine.rawBitDepth = settings.rawBitDepth
         engine.jpegQuality = settings.jpegQuality
+        engine.watermark = settings.watermark
 
         val oisSupported = caps?.supportsOis ?: true
         engine.updateSettings { it.copy(oisOn = if (oisSupported) settings.ois else null) }
@@ -1237,6 +1286,7 @@ class MainActivity : AppCompatActivity(), CameraEngine.Callback {
     private companion object {
         const val REQUEST_CAMERA = 101
         const val REQUEST_AUDIO = 102
+        const val EXPOSURE_SWIPE_STEP_DP = 56
         const val PANO_STEP_DEGREES = 8f
         const val PANO_MAX_FRAMES = 24
     }

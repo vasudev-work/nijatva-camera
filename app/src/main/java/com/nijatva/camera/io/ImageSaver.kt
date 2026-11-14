@@ -26,8 +26,10 @@ class ImageSaver(private val context: Context) {
         label: String = "IMG",
         mirror: Boolean = false,
         wideGamut: Boolean = false,
+        watermark: String? = null,
     ): Uri {
         val prepared = prepare(bitmap, mirror, wideGamut)
+        watermark?.let { drawWatermark(prepared, it) }
         val name = "${label}_${timestamp()}.jpg"
         val values = ContentValues().apply {
             put(MediaStore.Images.Media.DISPLAY_NAME, name)
@@ -183,6 +185,27 @@ class ImageSaver(private val context: Context) {
      * Wide gamut tags the bitmap as Display P3, so the encoder writes an ICC
      * profile instead of assuming sRGB.
      */
+    /**
+     * Stamps a short line in the bottom-left corner of the finished image.
+     *
+     * Drawn on a mutable copy before encoding, so the pixels that leave the app
+     * already carry it; nothing downstream has to know about it. The type size is
+     * a fraction of the short side, so a 12 MP frame and a 4 MP one look the same.
+     */
+    private fun drawWatermark(target: Bitmap, text: String) {
+        if (!target.isMutable) return
+        val canvas = android.graphics.Canvas(target)
+        val shortSide = minOf(target.width, target.height).toFloat()
+        val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            color = android.graphics.Color.WHITE
+            textSize = shortSide * 0.022f
+            typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
+            setShadowLayer(textSize * 0.35f, 0f, textSize * 0.08f, android.graphics.Color.argb(160, 0, 0, 0))
+        }
+        val margin = shortSide * 0.035f
+        canvas.drawText(text, margin, target.height - margin, paint)
+    }
+
     private fun prepare(bitmap: Bitmap, mirror: Boolean, wideGamut: Boolean): Bitmap {
         var working = bitmap
 

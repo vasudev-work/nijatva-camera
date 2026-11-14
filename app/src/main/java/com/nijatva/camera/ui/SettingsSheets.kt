@@ -244,6 +244,15 @@ class SettingsSheet(
         })
 
         content.addView(switchRow(
+            title = "Watermark",
+            subtitle = "Stamp \"Shot on Nijatva\" in the corner of merged photos",
+            checked = settings.watermark,
+        ) { checked ->
+            settings = settings.copy(watermark = checked)
+            push()
+        })
+
+        content.addView(switchRow(
             title = "Save selfie as previewed",
             subtitle = "Mirror the front camera image, as the preview shows it",
             checked = settings.saveSelfieAsPreviewed,
