@@ -6,7 +6,6 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.view.View
 import com.nijatva.camera.settings.GridType
-import kotlin.math.abs
 
 /**
  * Composition guides: the rule-of-thirds grid, a 4 x 4 grid, or golden-ratio
@@ -57,8 +56,18 @@ class GridOverlay(context: Context) : View(context) {
         invalidate()
     }
 
+    /** Called when the phone becomes level, or stops being level. */
+    var onLevelChanged: ((Boolean) -> Unit)? = null
+
+    private var level = false
+
     fun setRoll(degrees: Float) {
         rollDegrees = degrees
+        val nowLevel = LevelDetector.isLevel(degrees, level)
+        if (nowLevel != level) {
+            level = nowLevel
+            onLevelChanged?.invoke(nowLevel)
+        }
         if (levelVisible) invalidate()
     }
 
@@ -101,8 +110,6 @@ class GridOverlay(context: Context) : View(context) {
         val cx = width / 2f
         val cy = height / 2f
         val half = width * 0.22f
-        val level = abs(rollDegrees) < 0.5f
-
         levelPaint.color = if (level) Color.parseColor("#8BE38B") else Color.argb(200, 255, 255, 255)
 
         canvas.save()

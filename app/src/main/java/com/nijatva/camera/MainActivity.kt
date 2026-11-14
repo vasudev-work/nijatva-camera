@@ -235,7 +235,16 @@ class MainActivity : AppCompatActivity(), CameraEngine.Callback {
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT, Gravity.CENTER
         ))
 
-        gridOverlay = GridOverlay(this).apply { visibility = View.GONE }
+        gridOverlay = GridOverlay(this).apply {
+            visibility = View.GONE
+            // A short tick the moment the horizon comes straight, so the phone
+            // does not have to be looked at to be levelled.
+            onLevelChanged = { level ->
+                if (level && settings.framingHints) {
+                    window.decorView.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+                }
+            }
+        }
         root.addView(gridOverlay, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
         ))
