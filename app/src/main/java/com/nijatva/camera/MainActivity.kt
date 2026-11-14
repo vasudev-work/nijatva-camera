@@ -524,6 +524,7 @@ class MainActivity : AppCompatActivity(), CameraEngine.Callback {
         WindowCompat.setDecorFitsSystemWindows(window, false)
         ViewCompat.setOnApplyWindowInsetsListener(root) { _, insets ->
             val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            if (::modesGrid.isInitialized) modesGrid.setBottomInset(bars.bottom)
             topBar.updatePadding(top = bars.top + dp(4))
             bottomBar.updatePadding(bottom = dp(12) + bars.bottom)
             insets
@@ -644,6 +645,9 @@ class MainActivity : AppCompatActivity(), CameraEngine.Callback {
         videoToggle.active = mode == Mode.VIDEO
         modesGrid.setSelected(mode)
         statusStrip.visibility = if (mode == Mode.PRO) View.VISIBLE else View.GONE
+        // The pro panel already shows ISO and shutter live, and it sits over this
+        // line; hiding it keeps the readout from being drawn through the panel.
+        statusText.visibility = if (mode == Mode.PRO) View.GONE else View.VISIBLE
         // Analysis only runs in Photo and Pro, so hide its overlays in other modes.
         if (mode != Mode.PHOTO && mode != Mode.PRO) {
             histogramView.visibility = View.GONE

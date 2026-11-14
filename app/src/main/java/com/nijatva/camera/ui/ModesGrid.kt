@@ -127,6 +127,15 @@ class ModesGrid(context: Context) : FrameLayout(context) {
         strip.setMoreHighlighted(true)
     }
 
+    /**
+     * Lifts the bottom strip clear of the system navigation bar. The grid is a
+     * full-screen overlay, so without this the last chips sit under the gesture
+     * pill on a modern phone.
+     */
+    fun setBottomInset(px: Int) {
+        strip.setPadding(strip.paddingLeft, strip.paddingTop, strip.paddingRight, px)
+    }
+
     fun open() {
         visibility = View.VISIBLE
         bringToFront()
